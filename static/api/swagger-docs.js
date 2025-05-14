@@ -32,7 +32,7 @@ window.onload = function() {
       info.className = 'info-banner';
       info.innerHTML = `
       <p>This documentation contains all available endpoints in the WUZAPI API.</p>
-      <p>Authentication: Use the <code>token</code> header for regular users or <code>Authorization</code> for administrators.</p>
+      <p>Authentication: Use the <code>Token</code> header for regular users or <code>Authorization</code> for administrators.</p>
       `;
       info.style.padding = '10px';
       info.style.background = '#f8f8f8';
