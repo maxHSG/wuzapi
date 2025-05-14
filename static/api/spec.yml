@@ -540,7 +540,6 @@ paths:
             application/json:
               schema:
                 example: {"code":200,"data":{"Details":"Sent","Id":"3EB06F9067F80BAB89FF","Timestamp":"2022-05-10T12:49:08-03:00"},"success":true}
- 
   /chat/send/text:
     post:
       tags:
@@ -742,7 +741,28 @@ paths:
             application/json:
               schema:
                 example: {"code":200,"data":{"Details":"Sent","Id":"90B2F8B13FAC8A9CF6B06E99C7834DC5","Timestamp":"2022-04-20T12:49:08-03:00"},"success":true}
- 
+  /chat/send/poll:
+    post:
+      tags:
+        - Chat
+      summary: Sends a Poll to some group
+      description: Sends a Poll message. Group should contain the gid (group id), similar to 120363312246943103@g.us.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#definitions/MessagePoll'
+      responses:
+        200:
+          description: Response
+          content:
+            application/json:
+              schema:
+                example: {"code":200,"data":{"Details":"Sent","Id":"90B2F8B13FAC8A9CF6B06E99C7834DC5","Timestamp":"2022-04-20T12:49:08-03:00"},"success":true}
+
   /chat/downloadimage:
     post:
       tags:
@@ -1148,10 +1168,33 @@ definitions:
       Id:
         type: string
         example: "me:3EB06F9067F80BAB89FF"
- 
+
+  MessagePoll:
+    type: object
+    required:
+      - Group
+      - Header
+      - Options
+    properties:
+      Group:
+        type: string
+        example: "120363417042313103@g.us"
+      Header:
+        type: string
+        example: "What's your favorite color"
+      Options:
+        type: array
+        description: An array of options for the poll.
+        items:
+          type: string
+          example: "Red"
+      Id:
+        type: string
+        example: "3EB06F9067F80BAB89FF"
+
   MessageText:
     type: object
-    required: 
+    required:
       - Phone
       - Body
     properties:

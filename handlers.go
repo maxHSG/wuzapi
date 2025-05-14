@@ -1765,7 +1765,6 @@ func (s *server) SendMessage() http.HandlerFunc {
 		}
 
 		if t.Id == "" {
-			//msgid = whatsmeow.GenerateMessageID()
 			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
 		} else {
 			msgid = t.Id
@@ -1807,6 +1806,79 @@ func (s *server) SendMessage() http.HandlerFunc {
 		}
 
 		return
+	}
+}
+
+func (s *server) SendPoll() http.HandlerFunc {
+	type pollRequest struct {
+		Group   string   `json:"group"`   // The recipient's group id (120363313346913103@g.us)
+		Header  string   `json:"header"`  // The poll's headline text
+		Options []string `json:"options"` // The list of poll options
+		Id      string
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if clientManager.GetWhatsmeowClient(txtid) == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			return
+		}
+
+		msgid := ""
+		var resp whatsmeow.SendResponse
+
+		decoder := json.NewDecoder(r.Body)
+		var req pollRequest
+		err := decoder.Decode(&req)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not decode payload"))
+			return
+		}
+
+		if req.Group == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Missing Grouop in payload"))
+			return
+		}
+
+		if req.Header == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Missing Header in payload"))
+			return
+		}
+
+		if len(req.Options) < 2 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("At least 2 options are required"))
+			return
+		}
+
+		if req.Id == "" {
+			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
+		} else {
+			msgid = req.Id
+		}
+
+		recipient, err := validateMessageFields(req.Group, nil, nil)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		pollMessage := clientManager.GetWhatsmeowClient(txtid).BuildPollCreation(req.Header, req.Options, 1)
+		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, pollMessage, whatsmeow.SendRequestExtra{ID: msgid})
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Failed to send poll: %v", err)))
+			return
+		}
+
+		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Poll sent")
+
+		response := map[string]interface{}{"Details": "Poll sent successfully", "Id": msgid}
+		responseJson, err := json.Marshal(response)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
 	}
 }
 
