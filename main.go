@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -137,11 +138,20 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to initialize database")
 		os.Exit(1)
 	}
-	defer db.Close()
+	// Defer cleanup of the database connection
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close database connection")
+		}
+	}()
 
 	// Initialize the schema
 	if err = initializeSchema(db); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize schema")
+		// Perform cleanup before exiting
+		if err := db.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close database connection during cleanup")
+		}
 		os.Exit(1)
 	}
 
@@ -190,6 +200,30 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
+	var once sync.Once
+
+	// Wait for signals in a separate goroutine
+	go func() {
+		for {
+			<-done
+			once.Do(func() {
+				log.Warn().Msg("Stopping server...")
+
+				// Graceful shutdown logic
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				if err := srv.Shutdown(ctx); err != nil {
+					log.Error().Err(err).Msg("Failed to stop server")
+					os.Exit(1)
+				}
+
+				log.Info().Msg("Server Exited Properly")
+				os.Exit(0)
+			})
+		}
+	}()
+
 	go func() {
 		if *sslcert != "" {
 
@@ -211,15 +245,6 @@ func main() {
 		}
 	}()
 	log.Info().Str("address", *address).Str("port", *port).Msg("Server started. Waiting for connections...")
+	select {}
 
-	<-done
-	log.Warn().Msg("Stopping server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Error().Err(err).Msg("Failed to stop server")
-		os.Exit(1)
-	}
-	log.Info().Msg("Server Exited Properly")
 }
