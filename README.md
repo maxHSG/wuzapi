@@ -244,7 +244,7 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
 
 ## License
 
-Copyright &copy; 2025 Nicolás Gudiño
+Copyright &copy; 2025 Nicolás Gudiño and contributors
 
 [MIT](https://choosealicense.com/licenses/mit/)
 
