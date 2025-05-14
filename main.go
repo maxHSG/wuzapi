@@ -37,7 +37,7 @@ var (
 	port        = flag.String("port", "8080", "Listen Port")
 	waDebug     = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
 	logType     = flag.String("logtype", "console", "Type of log output (console or json)")
-	skipMedia   = flag.Bool("skipmedia", false, "Do not attempt to download media in messages)")
+	skipMedia   = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
 	osName      = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
 	colorOutput = flag.Bool("color", false, "Enable colored output for console logs")
 	sslcert     = flag.String("sslcertificate", "", "SSL Certificate File")
@@ -127,6 +127,7 @@ func init() {
 func main() {
 	ex, err := os.Executable()
 	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get executable path")
 		panic(err)
 	}
 	exPath := filepath.Dir(ex)
@@ -191,6 +192,15 @@ func main() {
 
 	go func() {
 		if *sslcert != "" {
+
+			if *sslcert != "" && *sslprivkey != "" {
+				if _, err := os.Stat(*sslcert); os.IsNotExist(err) {
+					log.Fatal().Err(err).Msg("SSL certificate file does not exist")
+				}
+				if _, err := os.Stat(*sslprivkey); os.IsNotExist(err) {
+					log.Fatal().Err(err).Msg("SSL private key file does not exist")
+				}
+			}
 			if err := srv.ListenAndServeTLS(*sslcert, *sslprivkey); err != nil && err != http.ErrServerClosed {
 				log.Fatal().Err(err).Msg("HTTPS server failed to start")
 			}
