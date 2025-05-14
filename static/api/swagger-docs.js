@@ -23,18 +23,16 @@ window.onload = function() {
       theme: "agate"
     },
     onComplete: function() {
-      // Personaliza o visual após o carregamento
       const title = document.querySelector('.topbar-wrapper a.link span');
       if (title) {
         title.innerText = 'WUZAPI Documentação';
       }
       
-      // Adiciona uma mensagem informativa
       const info = document.createElement('div');
       info.className = 'info-banner';
       info.innerHTML = `
-        <p>Esta documentação contém todos os endpoints disponíveis na API WUZAPI.</p>
-        <p>Autenticação: Utilizar o cabeçalho <code>token</code> para usuários regulares ou <code>Authorization</code> para administradores.</p>
+      <p>This documentation contains all available endpoints in the WUZAPI API.</p>
+      <p>Authentication: Use the <code>token</code> header for regular users or <code>Authorization</code> for administrators.</p>
       `;
       info.style.padding = '10px';
       info.style.background = '#f8f8f8';
@@ -51,13 +49,12 @@ window.onload = function() {
 
   window.ui = ui;
 
-  // Adiciona botão para painel de administração
   const topbar = document.querySelector('.topbar');
   if (topbar) {
     const dashboardButton = document.createElement('a');
     dashboardButton.href = '/dashboard';
     dashboardButton.className = 'dashboard-button';
-    dashboardButton.textContent = 'Painel de Gerenciamento';
+    dashboardButton.textContent = 'Dashboard';
     dashboardButton.style.cssText = `
       position: fixed;
       top: 10px;
