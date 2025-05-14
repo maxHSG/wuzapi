@@ -3516,6 +3516,16 @@ func (s *server) DeleteUserComplete() http.HandlerFunc {
 		clientManager.DeleteHTTPClient(id)
 		userinfocache.Delete(token)
 
+		// 4. Remove media files
+		userDirectory := filepath.Join(s.exPath, "files", id)
+		if stat, err := os.Stat(userDirectory); err == nil && stat.IsDir() {
+			log.Info().Str("dir", userDirectory).Msg("Deleting media and history files from disk")
+			err = os.RemoveAll(userDirectory)
+			if err != nil {
+				log.Error().Err(err).Str("dir", userDirectory).Msg("Erro ao remover diretório de mídia")
+			}
+		}
+
 		log.Info().Str("id", id).Str("name", uname).Str("jid", jid).Msg("User deleted successfully")
 
 		// Success response
