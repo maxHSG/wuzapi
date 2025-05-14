@@ -1011,16 +1011,22 @@ function getLocalStorageItem(key) {
   const itemStr = localStorage.getItem(key);
   if (!itemStr) return null;
 
-  const item = JSON.parse(itemStr);
-  const now = new Date().getTime();
+  try {
+    const item = JSON.parse(itemStr);
+    const now = new Date().getTime();
 
-  // Check if expired
-  if (now > item.expiry) {
-    localStorage.removeItem(key); // Clean up expired item
+    // Check if expired (only if the parsed item has an expiry property)
+    if (item.expiry && now > item.expiry) {
+      localStorage.removeItem(key); // Clean up expired item
+      return null;
+    }
+
+    // Return value only if the parsed item has a value property
+    return item.value !== undefined ? item.value : null;
+  } catch (e) {
+    // If JSON parsing fails, treat it as not found
     return null;
   }
-
-  return item.value;
 }
 
 /**
