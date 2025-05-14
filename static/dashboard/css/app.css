@@ -1,0 +1,282 @@
+:root {
+  --primary-color: #00A884; /* WhatsApp's new brand green */
+  --secondary-color: #008069; /* WhatsApp's darker green */
+  --tertiary-color: #075E54; /* WhatsApp's darkest green */
+  --background-color: #f0f2f5;
+  --card-hover-color: #ffffff;
+  --text-color: #111B21; /* WhatsApp's text color */
+  --gradient-start: #00A884;
+  --gradient-end: #008069;
+  --message-background: #FFFFFF;
+  --success-green: #00A884;
+  --gradient-primary: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+}
+
+body {
+  background-color: var(--background-color) !important;
+  color: var(--text-color) !important;
+  font-family: "Helvetica Neue", "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+}
+
+body > .ui.logingrid {
+  height: 100%;
+  max-width: 800px !important;
+  margin:auto !important;
+}
+
+#loginForm label {
+  color: var(--secondary-color);
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.whatsapp.icon.bi-whatsapp {
+  font-size: 6rem;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.menu-header {
+  background: var(--primary-color) !important;
+  color: white !important;
+  margin-bottom: 2em !important;
+  box-shadow: 
+      0 20px 40px rgba(0, 168, 132, 0.2),
+      inset 0 0 80px rgba(255, 255, 255, 0.15) !important;
+  position: relative;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease-in-out;
+}
+
+.login {
+  border-radius: 15px !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
+  padding: 2em !important;
+}
+
+.container {
+  max-width: 1400px !important;
+  margin: 0 auto !important;
+}
+
+.main-header {
+  background: var(--primary-color) !important;
+  color: white !important;
+  padding: 1.5em 2em !important;
+  border-radius: 24px !important;
+  margin-bottom: 2em !important;
+  box-shadow: 
+      0 20px 40px rgba(0, 168, 132, 0.2),
+      inset 0 0 80px rgba(255, 255, 255, 0.15) !important;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease-in-out;
+}
+
+.hidden {
+  display:none !important;
+}
+
+.ui.stackable.cards > .card.hidden {
+  display: none !important;
+}
+
+.menu-header .title-container {
+  font-size: clamp(1.5em, 3vw, 1.8em) !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+}
+.main-header .title-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+}
+
+a#menulogout, a:visited#menulogout {
+  color: #000;
+}
+
+.main-header .whatsapp.icon {
+  font-size: 1em !important;
+}
+
+.main-header .whatsapp.icon:hover {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (min-width: 768px) {
+  .main-header {
+      padding: 2em !important;
+  }
+
+  .main-header .ui.header {
+      flex-direction: column;
+  }
+
+  .main-header .version-label {
+      margin-top: 4px !important;
+  }
+}
+
+.ui.header {
+  font-weight: 600 !important;
+  color: var(--text-color) !important;
+}
+
+.ui.cards > .card {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05) !important;
+  border-radius: 16px !important;
+  margin: 0.7em !important;
+  background-color: var(--message-background) !important;
+  border: 1px solid rgba(18, 140, 126, 0.1);
+}
+
+.ui.cards > .card:not(.no-hover):hover {
+  transform: translateY(-8px) !important;
+  box-shadow: 0 12px 24px rgba(18, 140, 126, 0.15) !important;
+  background-color: var(--card-hover-color) !important;
+}
+
+.ui.horizontal.divider {
+  font-size: 1.3em !important;
+  color: var(--secondary-color) !important;
+  margin: 2.5em 0 !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.ui.success.message {
+  border-radius: 16px !important;
+  box-shadow: 0 4px 8px rgba(37, 211, 102, 0.1) !important;
+  border: 1px solid rgba(37, 211, 102, 0.2) !important;
+  background-color: rgba(231, 247, 232, 0.8) !important;
+  color: var(--success-green) !important;
+  animation: slideIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  backdrop-filter: blur(10px);
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.ui.button {
+  border-radius: 12px !important;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+  color: white !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px;
+}
+
+.ui.button:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 8px 16px rgba(0, 168, 132, 0.2) !important;
+  filter: brightness(0.95);
+}
+
+.ui.form input, .ui.form textarea {
+  border-radius: 12px !important;
+  border: 2px solid rgba(18, 140, 126, 0.1) !important;
+  transition: all 0.3s ease;
+}
+
+.ui.form input:focus, .ui.form textarea:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.1) !important;
+}
+
+.ui.grid {
+  margin: -0.7em !important;
+}
+
+.ui.grid > .column {
+  padding: 0.7em !important;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ui.modal {
+  border-radius: 20px !important;
+  background-color: var(--message-background) !important;
+  overflow: hidden;
+}
+
+.ui.modal > .header {
+  border-radius: 20px 20px 0 0 !important;
+  background: var(--gradient-start) !important;
+  color: white !important;
+  padding: 1.5em !important;
+}
+
+.ui.modal > .actions {
+  border-radius: 0 0 20px 20px !important;
+  background-color: rgba(248, 248, 248, 0.8) !important;
+  backdrop-filter: blur(10px);
+}
+
+.ui.modal > .actions > .ui.button {
+  font-weight: 600 !important;
+  letter-spacing: 0.5px;
+}
+
+.mb-4 {
+  margin-bottom: 1.5em !important;
+}
+
+#user-role-indicator.admin {
+  color: #db2828; 
+  font-weight: bold;
+}
+  
+#user-role-indicator.admin div.label {
+  background-color:#d31616; 
+}
+
+#user-role-indicator.admin i.icon {
+  color:#d31616;
+}
+  
+#user-role-indicator.user {
+  color: #a3f298;
+}
+  
+#user-role-indicator.user i.icon {
+  color: #a3f298;
+}
+  
+#user-role-indicator.user div.label {
+  background-color: #a3f298;
+  color: #000;
+}
+
+.ui.secondary.pointing.menu {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.p1 {
+  padding-right:1em;
+  padding-left:1em;
+}
+
+.adminlogin {
+  display:none;
+}
+
+.required {
+  color: #db2828;
+}

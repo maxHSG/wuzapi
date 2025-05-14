@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: WUZAPI
-  description: "WUZAPI implements a REST API for WhatsApp.\n\nFor authentication you must pass the 'token' header with a token that will be matched with the 'users' table on database).\n\nYou can insert a sample user with this command:\n\n<pre><code>curl -X POST http://localhost:8080/admin/users \\\n-H \"Authorization: $WUZAPI_ADMIN_TOKEN\" \\\n-H \"Content-Type: application/json\" \\\n-d '{\"name\": \"John\", \"token\": \"Z1234ABCD\", \"events\": \"All\"}' </code> </pre>\n\nYou will need to scan the QR code using your own front end or you could use the provided one [here](/login?token=1234ABCD).\n\nTo receive messages you will need to create your own server and set its URL as hook using the [webhook](#Webhook) API call.\n\n <b>PS:</b> Phone numbers should have country code with or without the <b>+</b> sign eg: <b>5491155553934</b> or <b>+5491155553934</b>, but natively whatsapp requires no plus sign prefix."
+  description: "WUZAPI implements a multi user and multi device REST API for WhatsApp.\n\n<h2>Authentication</h2><ul><li>Standard Endpoints: Include the token header with a valid user token (matches tokens stored in the users database table).</li><li>Admin Endpoints: Use the Authorization header with the admin token (set in .env as WUZAPI_ADMIN_TOKEN).</li></ul><h2>Admin Setup:</h2>You can manage users and do some tests by using the builtin dashboard [here](/dashboard).<h3>Add a Sample User via API</h3>Run this command to create a test user:<pre><code>curl -X POST http://localhost:8080/admin/users \\ \n-H \"Authorization: $WUZAPI_ADMIN_TOKEN\" \\ \n-H \"Content-Type: application/json\" \\ \n-d '{\"name\": \"John\", \"token\": \"Z1234ABCCXD\"}' </code> </pre>\n\n<h2>Webhook Configuration</h2>To receive WhatsApp messages:<ul><li>Host your own server (to process incoming messages).</li><li>Set its URL as the webhook via the [webhook](#Webhook) API call.</li></ul><h2>Phone number format:</h2><ul><li>Required: Country code (e.g. <b>5491155553934</b> for Argentina</li><li>Do not prefix with a plus sign (+), as natively whatsapp requires no plus sign prefix.</li></ul>"
   version: '3.0'
   termsOfService: ''
    
@@ -14,7 +14,7 @@ paths:
       tags:
         - Admin
       summary: List users
-      description: Retrieve a list of users from the database.
+      description: Retrieve a list of users from the database, displaying also connection status and other info.
       security:
         - AdminAuth: []
       responses:
@@ -23,14 +23,7 @@ paths:
           content:
             application/json:
               schema:
-                example: 
-                  code: 200
-                  data: 
-                    - id: 1
-                      name: John Doe
-                    - id: 2
-                      name: Jane Doe
-                  success: true
+                example: { "code": 200, "data": [ { "connected": true, "events": "All", "expiration": 0, "id": "bec45bb93cbd24cbec32941ec3c93a12", "jid": "5491155551122:12@s.whatsapp.net", "loggedIn": true, "name": "Some User", "proxy_url": "", "qrcode": "", "token": "d030sl9aDL39sl3075zz", "webhook": "https://some.domain/webhook" } ], "success": true }
     post:
       tags:
         - Admin
@@ -50,18 +43,12 @@ paths:
           content:
             application/json:
               schema:
-                example: 
-                  code: 201
-                  data:
-                    id: 1
-                    name: John Doe
-                  success: true
-
+                example: {"code":201,"data":{"id":"5663e0c52063ec35d0ba45f7c2011c06","name":"John Doe"},"success":true}
   /admin/users/{id}:
     delete:
       tags:
         - Admin
-      summary: Delete a user
+      summary: Delete a user from DB
       description: Deletes a user by their ID.
       security:
         - AdminAuth: []
@@ -71,17 +58,38 @@ paths:
           required: true
           description: ID of the user to delete
           schema:
-            type: integer
-            example: 1
+            type: string
+            example: 4e4942c7dee1deef99ab8fd9f7350de5
       responses:
-        204:
+        200:
           description: User deleted
           content:
             application/json:
               schema:
-                example: 
-                  code: 204
-                  success: true
+                example: {"code":200,"data":{"id":"6b927654cada7635a4586bf8fad260a3"},"details":"User deleted successfully","success":true}
+  /admin/users/{id}/full:
+    delete:
+      tags:
+        - Admin
+      summary: Delete a user from DB, logout and disconnect from whatsapp and clear it up from memory
+      description: Deletes a user by their ID, including login out, disconnect and memory cleanup.
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the user to delete
+          schema:
+            type: string
+            example: 4e4942c7dee1deef99ab8fd9f7350de5
+      responses:
+        200:
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                example: {"code":200,"data":{"id":"4e4942c7dee1deef99ab8fd9f7350de5","jid":"","name":"mariano"},"details":"User instance removed completely","success":true}
   /newsletter/list:
     get:
       tags:
@@ -945,8 +953,8 @@ definitions:
     type: object
     properties:
       id:
-        type: integer
-        example: 1
+        type: string
+        example: 4e4942c7dee1deef99ab8fd9f7350de5
       name:
         type: string
         example: John Doe
@@ -968,8 +976,8 @@ definitions:
     type: object
     properties:
       id:
-        type: integer
-        example: 1
+        type: string
+        example: 4e4942c7dee1deef99ab8fd9f7350de5
   GroupPhoto:
     type: object
     properties:
