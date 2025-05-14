@@ -44,12 +44,15 @@ var (
 	sslcert     = flag.String("sslcertificate", "", "SSL Certificate File")
 	sslprivkey  = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
 	adminToken  = flag.String("admintoken", "", "Security Token to authorize admin actions (list/create/remove users)")
+	versionFlag = flag.Bool("version", false, "Display version information and exit")
 
 	container     *sqlstore.Container
 	clientManager = NewClientManager()
 	killchannel   = make(map[string](chan bool))
 	userinfocache = cache.New(5*time.Minute, 10*time.Minute)
 )
+
+const version = "1.0.0"
 
 func init() {
 	err := godotenv.Load()
@@ -59,6 +62,10 @@ func init() {
 
 	flag.Parse()
 
+	if *versionFlag {
+		fmt.Printf("WuzAPI version %s\n", version)
+		os.Exit(0)
+	}
 	tz := os.Getenv("TZ")
 	if tz != "" {
 		loc, err := time.LoadLocation(tz)
