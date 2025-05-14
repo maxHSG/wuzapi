@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -36,7 +35,7 @@ var historySyncID int32
 type MyClient struct {
 	WAClient       *whatsmeow.Client
 	eventHandlerID uint32
-	userID         int
+	userID         string
 	token          string
 	subscriptions  []string
 	db             *sqlx.DB
@@ -44,7 +43,7 @@ type MyClient struct {
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
-	rows, err := s.db.Queryx("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
+	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,proxy_url FROM users WHERE connected=1")
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
 		return
@@ -54,9 +53,11 @@ func (s *server) connectOnStartup() {
 		txtid := ""
 		token := ""
 		jid := ""
+		name := ""
 		webhook := ""
 		events := ""
-		err = rows.Scan(&txtid, &token, &jid, &webhook, &events)
+		proxy_url := ""
+		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &proxy_url)
 		if err != nil {
 			log.Error().Err(err).Msg("DB Problem")
 			return
@@ -64,13 +65,14 @@ func (s *server) connectOnStartup() {
 			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
 			v := Values{map[string]string{
 				"Id":      txtid,
+				"Name":    name,
 				"Jid":     jid,
 				"Webhook": webhook,
 				"Token":   token,
+				"Proxy":   proxy_url,
 				"Events":  events,
 			}}
 			userinfocache.Set(token, v, cache.NoExpiration)
-			userid, _ := strconv.Atoi(txtid)
 			// Gets and set subscription to webhook events
 			eventarray := strings.Split(events, ",")
 
@@ -92,8 +94,8 @@ func (s *server) connectOnStartup() {
 			}
 			eventstring := strings.Join(subscribedEvents, ",")
 			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
-			killchannel[userid] = make(chan bool)
-			go s.startClient(userid, jid, token, subscribedEvents)
+			killchannel[txtid] = make(chan bool)
+			go s.startClient(txtid, jid, token, subscribedEvents)
 		}
 	}
 	err = rows.Err()
@@ -121,8 +123,8 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func (s *server) startClient(userID int, textjid string, token string, subscriptions []string) {
-	log.Info().Str("userid", strconv.Itoa(userID)).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
+func (s *server) startClient(userID string, textjid string, token string, subscriptions []string) {
+	log.Info().Str("userid", userID).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
 
 	var deviceStore *store.Device
 	var err error
@@ -173,13 +175,6 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 		deviceStore = container.NewDevice()
 	}
 
-	/*
-		if deviceStore == nil {
-			log.Warn().Msg("No store found. Creating new one")
-			deviceStore = container.NewDevice()
-		}
-	*/
-
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_UNKNOWN.Enum()
 	store.DeviceProps.Os = osName
 
@@ -226,6 +221,9 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 				log.Error().Err(err).Msg("Failed to connect client")
 				return
 			}
+
+			myuserinfo, found := userinfocache.Get(token)
+
 			for evt := range qrChan {
 				if evt.Event == "code" {
 					// Display QR code in terminal (useful for testing/developing)
@@ -240,6 +238,12 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 					_, err := s.db.Exec(sqlStmt, base64qrcode, userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
+					} else {
+						if found {
+							v := updateUserInfo(myuserinfo, "Qrcode", base64qrcode)
+							userinfocache.Set(token, v, cache.NoExpiration)
+							log.Info().Str("qrcode", base64qrcode).Msg("update cache userinfo with qr code")
+						}
 					}
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
@@ -247,6 +251,11 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 					_, err := s.db.Exec(sqlStmt, userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
+					} else {
+						if found {
+							v := updateUserInfo(myuserinfo, "Qrcode", "")
+							userinfocache.Set(token, v, cache.NoExpiration)
+						}
 					}
 					log.Warn().Msg("QR timeout killing channel")
 					clientManager.DeleteWhatsmeowClient(userID)
@@ -258,6 +267,11 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 					_, err := s.db.Exec(sqlStmt, userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
+					} else {
+						if found {
+							v := updateUserInfo(myuserinfo, "Qrcode", "")
+							userinfocache.Set(token, v, cache.NoExpiration)
+						}
 					}
 				} else {
 					log.Info().Str("event", evt.Event).Msg("Login event")
@@ -278,7 +292,7 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 	for {
 		select {
 		case <-killchannel[userID]:
-			log.Info().Str("userid", strconv.Itoa(userID)).Msg("Received kill signal")
+			log.Info().Str("userid", userID).Msg("Received kill signal")
 			client.Disconnect()
 			clientManager.DeleteWhatsmeowClient(userID)
 			sqlStmt := `UPDATE users SET qrcode='', connected=0 WHERE id=$1`
@@ -304,7 +318,7 @@ func fileToBase64(filepath string) (string, string, error) {
 }
 
 func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
-	txtid := strconv.Itoa(mycli.userID)
+	txtid := mycli.userID
 	postmap := make(map[string]interface{})
 	postmap["event"] = rawEvt
 	dowebhook := 0
@@ -339,7 +353,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			return
 		}
 	case *events.PairSuccess:
-		log.Info().Str("userid", strconv.Itoa(mycli.userID)).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		log.Info().Str("userid", mycli.userID).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
 		jid := evt.ID
 		sqlStmt := `UPDATE users SET jid=$1 WHERE id=$2`
 		_, err := mycli.db.Exec(sqlStmt, jid, mycli.userID)
@@ -723,7 +737,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}
 		} else {
-			log.Warn().Str("userid", strconv.Itoa(mycli.userID)).Msg("No webhook set for user")
+			log.Warn().Str("userid", mycli.userID).Msg("No webhook set for user")
 		}
 	}
 }

@@ -1,9 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/rs/zerolog/log"
-	"strconv"
+	"net/http"
 )
 
 func Find(slice []string, val string) bool {
@@ -23,8 +24,8 @@ func updateUserInfo(values interface{}, field string, value string) interface{} 
 }
 
 // webhook for regular messages
-func callHook(myurl string, payload map[string]string, id int) {
-	log.Info().Str("url", myurl).Msg("Sending POST to client " + strconv.Itoa(id))
+func callHook(myurl string, payload map[string]string, id string) {
+	log.Info().Str("url", myurl).Msg("Sending POST to client " + id)
 
 	// Log the payload map
 	log.Debug().Msg("Payload:")
@@ -41,7 +42,7 @@ func callHook(myurl string, payload map[string]string, id int) {
 }
 
 // webhook for messages with file attachments
-func callHookFile(myurl string, payload map[string]string, id int, file string) error {
+func callHookFile(myurl string, payload map[string]string, id string, file string) error {
 	log.Info().Str("file", file).Str("url", myurl).Msg("Sending POST")
 
 	client := clientManager.GetHTTPClient(id)
@@ -72,4 +73,12 @@ func callHookFile(myurl string, payload map[string]string, id int, file string) 
 	log.Info().Int("status", resp.StatusCode()).Str("body", string(resp.Body())).Msg("POST request completed")
 
 	return nil
+}
+
+func (s *server) respondWithJSON(w http.ResponseWriter, statusCode int, payload interface{}) {
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Error().Err(err).Msg("Failed to encode JSON response")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }

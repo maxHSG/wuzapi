@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,7 +46,7 @@ var (
 
 	container     *sqlstore.Container
 	clientManager = NewClientManager()
-	killchannel   = make(map[int](chan bool))
+	killchannel   = make(map[string](chan bool))
 	userinfocache = cache.New(5*time.Minute, 10*time.Minute)
 )
 
@@ -110,6 +111,15 @@ func init() {
 	if *adminToken == "" {
 		if v := os.Getenv("WUZAPI_ADMIN_TOKEN"); v != "" {
 			*adminToken = v
+		} else {
+			// Generate a random token if none provided
+			const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+			b := make([]byte, 32)
+			for i := range b {
+				b[i] = charset[rand.Intn(len(charset))]
+			}
+			*adminToken = string(b)
+			log.Warn().Str("admin_token", *adminToken).Msg("No admin token provided, generated a random one")
 		}
 	}
 }
@@ -202,80 +212,4 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info().Msg("Server Exited Properly")
-}
-
-func initializeSchema(db *sqlx.DB) error {
-	// First, check if the table exists
-	var exists bool
-	var err error
-
-	// Detect the database driver
-	driverName := db.DriverName()
-
-	if driverName == "postgres" {
-		err = db.Get(&exists, `
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_name = 'users'
-            );`)
-	} else if driverName == "sqlite" {
-		err = db.Get(&exists, `
-            SELECT EXISTS (
-                SELECT 1
-                FROM sqlite_master
-                WHERE type='table' AND name='users'
-            );`)
-	} else {
-		return fmt.Errorf("unsupported database driver: %s", driverName)
-	}
-
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to check if users table exists")
-		return err
-	}
-
-	if exists {
-		log.Info().Msg("Users table already exists")
-		return nil
-	}
-	// Create table statement that works with both PostgreSQL and SQLite
-	var sqlStmt string
-	if driverName == "postgres" {
-		sqlStmt = `CREATE TABLE users (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            token TEXT NOT NULL,
-            webhook TEXT NOT NULL DEFAULT '',
-            jid TEXT NOT NULL DEFAULT '',
-            qrcode TEXT NOT NULL DEFAULT '',
-            connected INTEGER,
-            expiration INTEGER,
-            events TEXT NOT NULL DEFAULT 'All',
-            proxy_url TEXT DEFAULT ''
-        );`
-	} else {
-		// SQLite version
-		sqlStmt = `CREATE TABLE users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            token TEXT NOT NULL,
-            webhook TEXT NOT NULL DEFAULT '',
-            jid TEXT NOT NULL DEFAULT '',
-            qrcode TEXT NOT NULL DEFAULT '',
-            connected INTEGER,
-            expiration INTEGER,
-            events TEXT NOT NULL DEFAULT 'All',
-            proxy_url TEXT DEFAULT ''
-        );`
-	}
-
-	_, err = db.Exec(sqlStmt)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create users table")
-		return err
-	}
-
-	log.Info().Msg("Successfully created users table")
-	return nil
 }

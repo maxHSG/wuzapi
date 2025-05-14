@@ -9,48 +9,48 @@ import (
 
 type ClientManager struct {
 	sync.RWMutex
-	whatsmeowClients map[int]*whatsmeow.Client
-	httpClients      map[int]*resty.Client
+	whatsmeowClients map[string]*whatsmeow.Client
+	httpClients      map[string]*resty.Client
 }
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		whatsmeowClients: make(map[int]*whatsmeow.Client),
-		httpClients:      make(map[int]*resty.Client),
+		whatsmeowClients: make(map[string]*whatsmeow.Client),
+		httpClients:      make(map[string]*resty.Client),
 	}
 }
 
-func (cm *ClientManager) SetWhatsmeowClient(userID int, client *whatsmeow.Client) {
+func (cm *ClientManager) SetWhatsmeowClient(userID string, client *whatsmeow.Client) {
 	cm.Lock()
 	defer cm.Unlock()
 	cm.whatsmeowClients[userID] = client
 }
 
-func (cm *ClientManager) GetWhatsmeowClient(userID int) *whatsmeow.Client {
+func (cm *ClientManager) GetWhatsmeowClient(userID string) *whatsmeow.Client {
 	cm.RLock()
 	defer cm.RUnlock()
 	return cm.whatsmeowClients[userID]
 }
 
-func (cm *ClientManager) DeleteWhatsmeowClient(userID int) {
+func (cm *ClientManager) DeleteWhatsmeowClient(userID string) {
 	cm.Lock()
 	defer cm.Unlock()
 	delete(cm.whatsmeowClients, userID)
 }
 
-func (cm *ClientManager) SetHTTPClient(userID int, client *resty.Client) {
+func (cm *ClientManager) SetHTTPClient(userID string, client *resty.Client) {
 	cm.Lock()
 	defer cm.Unlock()
 	cm.httpClients[userID] = client
 }
 
-func (cm *ClientManager) GetHTTPClient(userID int) *resty.Client {
+func (cm *ClientManager) GetHTTPClient(userID string) *resty.Client {
 	cm.RLock()
 	defer cm.RUnlock()
 	return cm.httpClients[userID]
 }
 
-func (cm *ClientManager) DeleteHTTPClient(userID int) {
+func (cm *ClientManager) DeleteHTTPClient(userID string) {
 	cm.Lock()
 	defer cm.Unlock()
 	delete(cm.httpClients, userID)
