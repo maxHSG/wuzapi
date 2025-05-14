@@ -24,7 +24,7 @@ Whatsapp Business API service instead.
 * Session: connect, disconnect and logout from WhatsApp. Retrieve 
 connection status. Retrieve QR code for scanning.
 * Messages: send text, image, audio, document, template, video, sticker, 
-location and contact messages.
+location, contact and poll messages.
 * Users: check if phones have whatsapp, get user information, get user avatar, 
 retrieve full contact list.
 * Chat: set presence (typing/paused,recording media), mark messages as read, 
