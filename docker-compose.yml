@@ -17,12 +17,14 @@ services:
       - ./dbdata:/app/dbdata
       - ./files:/app/files
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - wuzapi-network
+    restart: on-failure
 
   db:
-    image: postgres:15
+    image: postgres:16
     environment:
       POSTGRES_USER: wuzapi
       POSTGRES_PASSWORD: wuzapi
@@ -33,6 +35,12 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - wuzapi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wuzapi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
       
 networks:
   wuzapi-network:
