@@ -26,10 +26,6 @@ WORKDIR /app
 
 COPY --from=builder /app/wuzapi         /app/
 COPY --from=builder /app/static         /app/static/
-COPY --from=builder /app/migrations     /app/migrations/
-COPY --from=builder /app/files          /app/files/
-COPY --from=builder /app/repository     /app/repository/
-COPY --from=builder /app/dbdata         /app/dbdata/
 COPY --from=builder /app/wuzapi.service /app/wuzapi.service
 
 RUN chmod +x /app/wuzapi
