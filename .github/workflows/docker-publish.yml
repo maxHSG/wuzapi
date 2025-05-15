@@ -12,6 +12,7 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: DOCKER
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     
     steps:
