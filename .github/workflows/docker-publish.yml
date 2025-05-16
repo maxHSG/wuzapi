@@ -32,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: setupautomatizado/wuzapi-server
+          images: asternic/wuzapi
           tags: |
             type=raw,value=latest
             type=sha,format=short
