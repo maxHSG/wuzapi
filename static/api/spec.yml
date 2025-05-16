@@ -562,6 +562,73 @@ paths:
             application/json:
               schema:
                 example: {"code":200,"data":{"Details":"Sent","Id":"90B2F8B13FAC8A9CF6B06E99C7834DC5","Timestamp":"2022-04-20T12:49:08-03:00"},"success":true}
+  /chat/send/edit:
+    post:
+      tags:
+        - Chat
+      summary: Edits a previously sent message
+      description: Edits a message already sent by the same user. Provide the message ID and new content.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                Id:
+                  type: string
+                  description: The ID of the message to edit
+                  example: "90B2F8B13FAC8A9CF6B06E99C7834DC5"
+                Phone:
+                  type: string
+                  description: The WhatsApp number or JID (use 'me:' prefix if your own message)
+                  example: "5491122223333"
+                Body:
+                  type: string
+                  description: New message content
+                  example: "This is the updated message"
+              required:
+                - Id
+                - Phone
+                - Body
+      responses:
+        200:
+          description: Message edited successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 200
+                  data:
+                    type: object
+                    properties:
+                      Details:
+                        type: string
+                        example: Message updated
+                  success:
+                    type: boolean
+                    example: true
+        400:
+          description: Invalid parameters or message not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 400
+                  error:
+                    type: string
+                    example: Invalid message ID or new content
+                  success:
+                    type: boolean
+                    example: false
   /chat/send/image:
     post:
       tags:
