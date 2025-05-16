@@ -1947,6 +1947,99 @@ func (s *server) DeleteMessage() http.HandlerFunc {
 	}
 }
 
+// Sends a edit text message
+func (s *server) SendEditMessage() http.HandlerFunc {
+
+	type editStruct struct {
+		Phone       string
+		Body        string
+		Id          string
+		ContextInfo waE2E.ContextInfo
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if clientManager.GetWhatsmeowClient(txtid) == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			return
+		}
+
+		msgid := ""
+		var resp whatsmeow.SendResponse
+
+		decoder := json.NewDecoder(r.Body)
+		var t editStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not decode Payload"))
+			return
+		}
+
+		if t.Phone == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Missing Phone in Payload"))
+			return
+		}
+
+		if t.Body == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Missing Body in Payload"))
+			return
+		}
+
+		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaID, t.ContextInfo.Participant)
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("%s", err))
+			s.Respond(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		if t.Id == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Missing Id in Payload"))
+			return
+		} else {
+			msgid = t.Id
+		}
+
+		msg := &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text: &t.Body,
+			},
+		}
+
+		if t.ContextInfo.StanzaID != nil {
+			msg.ExtendedTextMessage.ContextInfo = &waE2E.ContextInfo{
+				StanzaID:      proto.String(*t.ContextInfo.StanzaID),
+				Participant:   proto.String(*t.ContextInfo.Participant),
+				QuotedMessage: &waE2E.Message{Conversation: proto.String("")},
+			}
+		}
+		if t.ContextInfo.MentionedJID != nil {
+			if msg.ExtendedTextMessage.ContextInfo == nil {
+				msg.ExtendedTextMessage.ContextInfo = &waE2E.ContextInfo{}
+			}
+			msg.ExtendedTextMessage.ContextInfo.MentionedJID = t.ContextInfo.MentionedJID
+		}
+
+		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, clientManager.GetWhatsmeowClient(txtid).BuildEdit(recipient, msgid, msg))
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending edit message: %v", err)))
+			return
+		}
+
+		log.Info().Str("timestamp", fmt.Sprintf("%d", resp.Timestamp)).Str("id", msgid).Msg("Message edit sent")
+		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp, "Id": msgid}
+		responseJson, err := json.Marshal(response)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+
+		return
+	}
+}
+
 /*
 // Sends a Template message
 func (s *server) SendTemplate() http.HandlerFunc {
