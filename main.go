@@ -54,7 +54,7 @@ var (
 	lastMessageCache = cache.New(24*time.Hour, 24*time.Hour)
 )
 
-const version = "1.0.1"
+const version = "1.0.2"
 
 func init() {
 	err := godotenv.Load()
