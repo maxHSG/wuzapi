@@ -2336,6 +2336,184 @@ func (s *server) CheckUser() http.HandlerFunc {
 	}
 }
 
+// checks if users/jid-to-lid are on Whatsapp
+func (s *server) JIDToLID() http.HandlerFunc {
+
+	type JidToLidStruct struct {
+		JID []string
+	}
+
+	type User struct {
+		JID types.JID
+		LID types.JID
+	}
+
+	type UserCollection struct {
+		Users []User
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if clientManager.GetWhatsmeowClient(txtid) == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		var t JidToLidStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
+			return
+		}
+
+		if len(t.JID) < 1 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing JID in Payload"))
+			return
+		}
+
+		var cli = clientManager.GetWhatsmeowClient(txtid)
+
+		var jids []types.JID
+		for _, arg := range t.JID {
+			jid, err := types.ParseJID(arg)
+			if err != nil {
+				return
+			}
+			jids = append(jids, jid)
+		}
+
+		uc := new(UserCollection)
+		for _, jid := range jids {
+
+			if cli.Store.LIDs != nil {
+				if lid, err := cli.Store.LIDs.GetLIDForPN(context.TODO(), jid); err != nil {
+					logMsg := fmt.Sprintf("Failed to get LID for %s: %v", jid, err)
+
+					log.Info().Msg(logMsg)
+				} else if !lid.IsEmpty() {
+
+					var msg = User{
+						JID: jid,
+						LID: lid,
+					}
+					uc.Users = append(uc.Users, msg)
+
+					logMsg := fmt.Sprintf("Found LID %s for %s", lid, jid)
+
+					log.Info().Msg(logMsg)
+				} else {
+					logMsg := fmt.Sprintf("No LID found for %s", jid)
+
+					log.Info().Msg(logMsg)
+
+				}
+			}
+
+		}
+
+		responseJson, err := json.Marshal(uc)
+
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+
+	}
+}
+
+// checks if users/lid-to-jid are on Whatsapp
+func (s *server) LIDtoJID() http.HandlerFunc {
+
+	type LIDtoJIDStruct struct {
+		LID []string
+	}
+
+	type User struct {
+		LID types.JID
+		JID types.JID
+	}
+
+	type UserCollection struct {
+		Users []User
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		if clientManager.GetWhatsmeowClient(txtid) == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		var t LIDtoJIDStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
+			return
+		}
+
+		if len(t.LID) < 1 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing LID in Payload"))
+			return
+		}
+
+		var cli = clientManager.GetWhatsmeowClient(txtid)
+
+		var lids []types.JID
+		for _, arg := range t.LID {
+			jid, err := types.ParseJID(arg)
+			if err != nil {
+				return
+			}
+			lids = append(lids, jid)
+		}
+
+		uc := new(UserCollection)
+		for _, lid := range lids {
+
+			if cli.Store.LIDs != nil {
+				if jid, err := cli.Store.LIDs.GetPNForLID(context.TODO(), lid); err != nil {
+					logMsg := fmt.Sprintf("Failed to get LID for %s: %v", lid, err)
+
+					log.Info().Msg(logMsg)
+				} else if !lid.IsEmpty() {
+
+					var msg = User{
+						JID: jid,
+						LID: lid,
+					}
+					uc.Users = append(uc.Users, msg)
+
+					logMsg := fmt.Sprintf("Found LID %s for %s", lid, lid)
+
+					log.Info().Msg(logMsg)
+				} else {
+					logMsg := fmt.Sprintf("No LID found for %s", lid)
+
+					log.Info().Msg(logMsg)
+
+				}
+			}
+
+		}
+
+		responseJson, err := json.Marshal(uc)
+
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+
+	}
+}
+
 // Gets user information
 func (s *server) GetUser() http.HandlerFunc {
 

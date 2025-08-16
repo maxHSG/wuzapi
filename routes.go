@@ -109,6 +109,8 @@ func (s *server) routes() {
 	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")
 	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
 	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
+	s.router.Handle("/user/jid-to-lid", c.Then(s.JIDToLID())).Methods("POST")
+	s.router.Handle("/user/lid-to-jid", c.Then(s.LIDtoJID())).Methods("POST")
 	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
 
