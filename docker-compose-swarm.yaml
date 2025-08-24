@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   wuzapi-server:
-    image: setupautomatizado/wuzapi-server:latest
+    image: asternic/wuzapi:latest
     networks:
       - network_public
     environment:
