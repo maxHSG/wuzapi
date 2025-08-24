@@ -637,6 +637,44 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		log.Info().Str("id", evt.Info.ID).Str("source", evt.Info.SourceString()).Str("parts", strings.Join(metaParts, ", ")).Msg("Message Received")
 
 		if !*skipMedia {
+
+			if len(evt.Message.ExtendedTextMessage.JPEGThumbnail) != 0 {
+				thumbnailImageBytes, err := mycli.WAClient.DownloadThumbnail(context.Background(), evt.Message.GetExtendedTextMessage())
+
+				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
+				errDir := os.MkdirAll(tmpDirectory, 0751)
+				if errDir != nil {
+					log.Error().Err(errDir).Msg("Could not create temporary directory")
+					return
+				}
+
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to download image")
+					return
+				}
+
+				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+".jpg")
+
+				// Write the image to the temporary file
+				err = os.WriteFile(tmpPath, thumbnailImageBytes, 0600)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to save thumbnailImageBytes to temporary file")
+					return
+				}
+
+				base64String, mimeType, err := fileToBase64(tmpPath)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to convert image to base64")
+					return
+				}
+
+				// Add the base64 string and other details to the postmap
+				postmap["base64"] = base64String
+				postmap["mimeType"] = mimeType
+				postmap["fileName"] = filepath.Base(tmpPath)
+
+			}
+
 			// try to get Image if any
 			img := evt.Message.GetImageMessage()
 			if img != nil {
