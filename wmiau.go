@@ -638,8 +638,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		if !*skipMedia {
 
-			if len(evt.Message.ExtendedTextMessage.JPEGThumbnail) != 0 {
-				thumbnailImageBytes, err := mycli.WAClient.DownloadThumbnail(context.Background(), evt.Message.GetExtendedTextMessage())
+			extendTextMessage := evt.Message.GetExtendedTextMessage()
+
+			thumbnailDirectPath := extendTextMessage.GetThumbnailDirectPath()
+
+			if thumbnailDirectPath != "" {
+				thumbnailImageBytes, err := mycli.WAClient.DownloadThumbnail(context.Background(), extendTextMessage)
 
 				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
 				errDir := os.MkdirAll(tmpDirectory, 0751)
@@ -658,13 +662,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				// Write the image to the temporary file
 				err = os.WriteFile(tmpPath, thumbnailImageBytes, 0600)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to save thumbnailImageBytes to temporary file")
+					log.Error().Err(err).Msg("Failed to save thumbnailImage to temporary file")
 					return
 				}
 
 				base64String, mimeType, err := fileToBase64(tmpPath)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to convert image to base64")
+					log.Error().Err(err).Msg("Failed to convert thumbnailImage to base64")
 					return
 				}
 
@@ -673,10 +677,22 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				postmap["mimeType"] = mimeType
 				postmap["fileName"] = filepath.Base(tmpPath)
 
+				// Log the successful conversion
+				log.Info().Str("path", tmpPath).Msg("thumbnailImage processed")
+
+				// Delete the temporary file
+				err = os.Remove(tmpPath)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to delete temporary file")
+				} else {
+					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
+				}
+
 			}
 
 			// try to get Image if any
 			img := evt.Message.GetImageMessage()
+
 			if img != nil {
 				// Create a temporary directory in /tmp
 				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
