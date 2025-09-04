@@ -100,7 +100,7 @@ WUZAPI_ADMIN_TOKEN=your_admin_token_here
 DB_USER=wuzapi
 DB_PASSWORD=wuzapi
 DB_NAME=wuzapi
-DB_HOST=localhost  # Use 'db' when running with Docker Compose
+DB_HOST=db  # Use 'db' when running with Docker Compose, or 'localhost' for native execution
 DB_PORT=5432
 DB_SSLMODE=false
 ```
