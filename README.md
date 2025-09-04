@@ -142,10 +142,10 @@ When enabled:
 
 ### Docker Configuration
 
-When using Docker Compose, both `docker-compose.yml` and `docker-compose-swarm.yaml` are configured to automatically load environment variables from a `.env` file when available.
+When using Docker Compose, `docker-compose.yml` automatically loads environment variables from a `.env` file when available. However, `docker-compose-swarm.yaml` uses `docker stack deploy`, which does not automatically load from `.env` files. Variables in the swarm file will only be substituted if they are exported in the shell environment where the deploy command is run. For managing secrets in Swarm, consider using Docker secrets.
 
 The Docker configuration will:
-1. First load variables from the `.env` file (if present)
+1. First load variables from the `.env` file (if present and supported)
 2. Use default values as fallback if variables are not defined
 3. Override with any variables explicitly set in the `environment` section of the compose file
 
