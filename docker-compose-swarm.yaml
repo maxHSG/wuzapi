@@ -6,15 +6,16 @@ services:
     networks:
       - network_public
     environment:
-      - WUZAPI_ADMIN_TOKEN=H4Zbhw72PBKdTIgS
-      - DB_USER=wuzapi
-      - DB_PASSWORD=wuzapi
-      - DB_NAME=wuzapi
+      - WUZAPI_ADMIN_TOKEN=${WUZAPI_ADMIN_TOKEN}
+      - DB_USER=${DB_USER:-wuzapi}
+      - DB_PASSWORD=${DB_PASSWORD:-wuzapi}
+      - DB_NAME=${DB_NAME:-wuzapi}
       - DB_HOST=db
-      - DB_PORT=5432
-      - TZ=America/Sao_Paulo
-      - WEBHOOK_FORMAT=json
-      - SESSION_DEVICE_NAME=WuzAPI
+
+      - DB_PORT=${DB_PORT:-5432}
+      - TZ=${TZ:-America/Sao_Paulo}
+      - WEBHOOK_FORMAT=${WEBHOOK_FORMAT:-json}
+      - SESSION_DEVICE_NAME=${SESSION_DEVICE_NAME:-WuzAPI}
       # RabbitMQ configuration Optional
       - RABBITMQ_URL=amqp://wuzapi:wuzapi@rabbitmq:5672/
       - RABBITMQ_QUEUE=whatsapp_events
@@ -36,7 +37,7 @@ services:
         - traefik.http.routers.wuzapi-server.priority=1
         - traefik.http.routers.wuzapi-server.tls.certresolver=letsencryptresolver
         - traefik.http.routers.wuzapi-server.service=wuzapi-server
-        - traefik.http.services.wuzapi-server.loadbalancer.server.port=8080
+        - traefik.http.services.wuzapi-server.loadbalancer.server.port=${WUZAPI_PORT:-8080}
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
     #   interval: 10s
