@@ -852,14 +852,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// baixa o sticker usando a interface DownloadableMessage
+				// download the sticker using the DownloadableMessage interface
 				data, err := mycli.WAClient.Download(context.Background(), sticker)
 				if err != nil {
 					log.Error().Err(err).Msg("Failed to download sticker")
 					return
 				}
 
-				// tenta inferir extensão pelo mimetype; fallback para .webp
+				// tries to infer extension by mimetype; fallback to .webp
 				exts, _ := mime.ExtensionsByType(sticker.GetMimetype())
 				ext := ".webp"
 				if len(exts) > 0 && exts[0] != "" {
@@ -872,7 +872,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					return
 				}
 
-				// se usar S3 (mesmo fluxo das outras mídias)
+				// if using S3 (same stream as other media)
 				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
 					isIncoming := evt.Info.IsFromMe == false
 					contactJID := evt.Info.Sender.String()
@@ -896,7 +896,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					}
 				}
 
-				// base64 (mesmo contrato de saída das outras mídias)
+				// base64 (same output contract as other media)
 				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
 					base64String, mimeType, err := fileToBase64(tmpPath)
 					if err != nil {
@@ -908,7 +908,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					postmap["fileName"] = filepath.Base(tmpPath)
 				}
 
-				// metadados úteis (opcional, mas práticos)
+				// useful metadata (optional, but handy)
 				postmap["isSticker"] = true
 				postmap["stickerAnimated"] = sticker.GetIsAnimated()
 
