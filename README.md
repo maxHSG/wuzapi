@@ -57,6 +57,7 @@ you can use to alter behaviour
 * -osname : Connection OS Name in Whatsapp
 * -skipmedia : Skip downloading media from messages
 * -wadebug : enable whatsmeow debug, either INFO or DEBUG levels are suported
+
 * -sslcertificate : SSL Certificate File
 * -sslprivatekey : SSL Private Key File
 

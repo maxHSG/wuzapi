@@ -847,6 +847,95 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="endpoint">
+                <h3><span class="method get">GET</span> <span class="path">/chat/history</span></h3>
+                <p>Recupera o histórico de mensagens de um chat específico. Retorna as mensagens em ordem cronológica reversa (mais recentes primeiro).</p>
+                
+                <h4>Parâmetros de Query:</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>Parâmetro</th>
+                            <th>Tipo</th>
+                            <th>Descrição</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="required">chat_jid</td>
+                            <td>string</td>
+                            <td>JID (ID do WhatsApp) do chat para recuperar o histórico</td>
+                        </tr>
+                        <tr>
+                            <td>limit</td>
+                            <td>integer</td>
+                            <td>Número máximo de mensagens a recuperar (padrão: 50, máximo: 1000)</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <h4>Exemplo de Requisição:</h4>
+                <pre><code class="language-bash">GET /chat/history?chat_jid=5491155553935@s.whatsapp.net&limit=10</code></pre>
+                
+                <h4>Resposta de Sucesso:</h4>
+                <pre><code class="language-json">{
+  "code": 200,
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "user_id": "abc123def456",
+      "chat_jid": "5491155553935@s.whatsapp.net",
+      "sender_jid": "5491155554444@s.whatsapp.net",
+      "message_id": "3EB0C767D26A1B5F7C83",
+      "timestamp": "2023-12-01T15:30:00Z",
+      "message_type": "text",
+      "text_content": "Olá, como você está?",
+      "media_link": ""
+    },
+    {
+      "id": 2,
+      "user_id": "abc123def456", 
+      "chat_jid": "5491155553935@s.whatsapp.net",
+      "sender_jid": "5491155553935@s.whatsapp.net",
+      "message_id": "4FB1D878E37B2C6G8D94",
+      "timestamp": "2023-12-01T15:25:00Z",
+      "message_type": "image",
+      "text_content": "Veja esta foto!",
+      "media_link": "https://example.com/media/image123.jpg"
+    }
+  ]
+}</code></pre>
+
+                <h4>Possíveis Erros:</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Descrição</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>400</td>
+                            <td>Requisição inválida - parâmetro chat_jid obrigatório</td>
+                        </tr>
+                        <tr>
+                            <td>501</td>
+                            <td>Não implementado - histórico de mensagens está desabilitado</td>
+                        </tr>
+                        <tr>
+                            <td>500</td>
+                            <td>Erro interno do servidor</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div class="alert alert-info">
+                    <strong>Nota:</strong> Este endpoint requer que o histórico de mensagens esteja habilitado no servidor. O histórico é salvo automaticamente para mensagens enviadas e recebidas após a ativação desta funcionalidade.
+                </div>
+            </div>
         </section>
 
         <section id="user">

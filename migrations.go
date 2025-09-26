@@ -50,6 +50,11 @@ var migrations = []Migration{
 		Name:  "add_s3_support",
 		UpSQL: addS3SupportSQL,
 	},
+	{
+		ID:    5,
+		Name:  "add_message_history",
+		UpSQL: addMessageHistorySQL,
+	},
 }
 
 const changeIDToStringSQL = `
@@ -139,6 +144,33 @@ BEGIN
     
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 's3_retention_days') THEN
         ALTER TABLE users ADD COLUMN s3_retention_days INTEGER DEFAULT 30;
+    END IF;
+END $$;
+`
+
+const addMessageHistorySQL = `
+-- PostgreSQL version
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'message_history') THEN
+        CREATE TABLE message_history (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            chat_jid TEXT NOT NULL,
+            sender_jid TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            message_type TEXT NOT NULL,
+            text_content TEXT,
+            media_link TEXT,
+            UNIQUE(user_id, message_id)
+        );
+        CREATE INDEX idx_message_history_user_chat_timestamp ON message_history (user_id, chat_jid, timestamp DESC);
+    END IF;
+    
+    -- Add history column to users table if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'history') THEN
+        ALTER TABLE users ADD COLUMN history INTEGER DEFAULT 0;
     END IF;
 END $$;
 `
@@ -310,6 +342,35 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 			}
 			if err == nil {
 				err = addColumnIfNotExistsSQLite(tx, "users", "s3_retention_days", "INTEGER DEFAULT 30")
+			}
+		} else {
+			_, err = tx.Exec(migration.UpSQL)
+		}
+	} else if migration.ID == 5 {
+		if db.DriverName() == "sqlite" {
+			// Handle message_history table creation for SQLite
+			err = createTableIfNotExistsSQLite(tx, "message_history", `
+				CREATE TABLE message_history (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id TEXT NOT NULL,
+					chat_jid TEXT NOT NULL,
+					sender_jid TEXT NOT NULL,
+					message_id TEXT NOT NULL,
+					timestamp DATETIME NOT NULL,
+					message_type TEXT NOT NULL,
+					text_content TEXT,
+					media_link TEXT,
+					UNIQUE(user_id, message_id)
+				)`)
+			if err == nil {
+				// Create index for SQLite
+				_, err = tx.Exec(`
+					CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp 
+					ON message_history (user_id, chat_jid, timestamp DESC)`)
+			}
+			if err == nil {
+				// Add history column to users table
+				err = addColumnIfNotExistsSQLite(tx, "users", "history", "INTEGER DEFAULT 0")
 			}
 		} else {
 			_, err = tx.Exec(migration.UpSQL)

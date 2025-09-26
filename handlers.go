@@ -74,18 +74,27 @@ func (s *server) authalice(next http.Handler) http.Handler {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.db.Query("SELECT id,name,webhook,jid,events,proxy_url,qrcode FROM users WHERE token=$1 LIMIT 1", token)
+			rows, err := s.db.Query("SELECT id,name,webhook,jid,events,proxy_url,qrcode,history FROM users WHERE token=$1 LIMIT 1", token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
 			}
 			defer rows.Close()
+			var history sql.NullInt64
 			for rows.Next() {
-				err = rows.Scan(&txtid, &name, &webhook, &jid, &events, &proxy_url, &qrcode)
+				err = rows.Scan(&txtid, &name, &webhook, &jid, &events, &proxy_url, &qrcode, &history)
 				if err != nil {
 					s.Respond(w, r, http.StatusInternalServerError, err)
 					return
 				}
+				historyStr := "0"
+				if history.Valid {
+					historyStr = fmt.Sprintf("%d", history.Int64)
+				}
+				
+				// Debug logging for history value
+				log.Info().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
+				
 				v := Values{map[string]string{
 					"Id":      txtid,
 					"Name":    name,
@@ -95,6 +104,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 					"Proxy":   proxy_url,
 					"Events":  events,
 					"Qrcode":  qrcode,
+					"History": historyStr,
 				}}
 
 				userinfocache.Set(token, v, cache.NoExpiration)
@@ -628,6 +638,7 @@ func (s *server) GetStatus() http.HandlerFunc {
 			Str("Token", userInfo.Get("Token")).
 			Str("Events", userInfo.Get("Events")).
 			Str("Proxy", userInfo.Get("Proxy")).
+			Str("History", userInfo.Get("History")).
 			Msg("User info values")
 
 		log.Info().Str("Name", userInfo.Get("Name")).Msg("User name")
@@ -679,6 +690,7 @@ func (s *server) GetStatus() http.HandlerFunc {
 			"events":       userInfo.Get("Events"),
 			"proxy_url":    userInfo.Get("Proxy"),
 			"qrcode":       userInfo.Get("Qrcode"),
+			"history":      userInfo.Get("History"),
 			"proxy_config": proxyConfig,
 			"s3_config":    s3Config,
 		}
@@ -811,6 +823,10 @@ func (s *server) SendDocument() http.HandlerFunc {
 			return
 		}
 
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "document", t.Caption, "", historyLimit)
+
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -931,6 +947,10 @@ func (s *server) SendAudio() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
 		}
+
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "audio", "", "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -1105,6 +1125,10 @@ func (s *server) SendImage() http.HandlerFunc {
 			return
 		}
 
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "image", t.Caption, "", historyLimit)
+
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -1227,6 +1251,10 @@ func (s *server) SendSticker() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Error sending message: %v", err)))
 			return
 		}
+
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "sticker", "", "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -1373,6 +1401,10 @@ func (s *server) SendVideo() http.HandlerFunc {
 			return
 		}
 
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "video", t.Caption, "", historyLimit)
+
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
@@ -1465,6 +1497,10 @@ func (s *server) SendContact() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
 		}
+
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "contact", t.Name, "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -1560,6 +1596,10 @@ func (s *server) SendLocation() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
 		}
+
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "location", t.Name, "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -1904,6 +1944,10 @@ func (s *server) SendMessage() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
 			return
 		}
+
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		s.saveOutgoingMessageToHistory(txtid, recipient.String(), msgid, "text", t.Body, "", historyLimit)
 
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
@@ -4131,6 +4175,7 @@ func (s *server) ListUsers() http.HandlerFunc {
 		Expiration sql.NullInt64  `db:"expiration"`
 		ProxyURL   sql.NullString `db:"proxy_url"`
 		Events     string         `db:"events"`
+		History    sql.NullInt64  `db:"history"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -4141,11 +4186,11 @@ func (s *server) ListUsers() http.HandlerFunc {
 
 		if hasID {
 			// Fetch a single user
-			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events FROM users WHERE id = $1"
+			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users WHERE id = $1"
 			args = append(args, userID)
 		} else {
 			// Fetch all users
-			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events FROM users"
+			query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users"
 		}
 
 		rows, err := s.db.Queryx(query, args...)
@@ -4252,6 +4297,7 @@ func (s *server) AddUser() http.HandlerFunc {
 			Events      string       `json:"events,omitempty"`
 			ProxyConfig *ProxyConfig `json:"proxyConfig,omitempty"`
 			S3Config    *S3Config    `json:"s3Config,omitempty"`
+			History     int          `json:"history,omitempty"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
@@ -4331,9 +4377,9 @@ func (s *server) AddUser() http.HandlerFunc {
 
 		// Insert user with all proxy and S3 fields
 		if _, err = s.db.Exec(
-			"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, proxy_url, s3_enabled, s3_endpoint, s3_region, s3_bucket, s3_access_key, s3_secret_key, s3_path_style, s3_public_url, media_delivery, s3_retention_days) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)",
+			"INSERT INTO users (id, name, token, webhook, expiration, events, jid, qrcode, proxy_url, s3_enabled, s3_endpoint, s3_region, s3_bucket, s3_access_key, s3_secret_key, s3_path_style, s3_public_url, media_delivery, s3_retention_days, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
 			id, user.Name, user.Token, user.Webhook, user.Expiration, user.Events, "", "", user.ProxyConfig.ProxyURL,
-			user.S3Config.Enabled, user.S3Config.Endpoint, user.S3Config.Region, user.S3Config.Bucket, user.S3Config.AccessKey, user.S3Config.SecretKey, user.S3Config.PathStyle, user.S3Config.PublicURL, user.S3Config.MediaDelivery, user.S3Config.RetentionDays,
+			user.S3Config.Enabled, user.S3Config.Endpoint, user.S3Config.Region, user.S3Config.Bucket, user.S3Config.AccessKey, user.S3Config.SecretKey, user.S3Config.PathStyle, user.S3Config.PublicURL, user.S3Config.MediaDelivery, user.S3Config.RetentionDays, user.History,
 		); err != nil {
 			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("admin DB error")
 			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -4958,6 +5004,172 @@ func (s *server) DeleteS3Config() http.HandlerFunc {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 		} else {
 			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+	}
+}
+
+// Get chat history
+func (s *server) GetHistory() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		historyStr := r.Context().Value("userinfo").(Values).Get("History")
+		historyLimit, _ := strconv.Atoi(historyStr)
+		
+		// Debug logging
+		log.Info().Str("userId", txtid).Str("historyStr", historyStr).Int("historyLimit", historyLimit).Msg("GetHistory debug info")
+		
+		if historyLimit == 0 {
+			// Before returning error, try refreshing the cache in case the DB was updated
+			token := r.Context().Value("userinfo").(Values).Get("Token")
+			log.Info().Str("userId", txtid).Str("token", token).Msg("History is 0, invalidating cache and trying fresh DB lookup")
+			userinfocache.Delete(token)
+			
+			// Re-fetch from database
+			var newHistoryValue sql.NullInt64
+			err := s.db.QueryRow("SELECT COALESCE(history, 0) FROM users WHERE id = $1", txtid).Scan(&newHistoryValue)
+			if err != nil {
+				log.Error().Err(err).Str("userId", txtid).Msg("Failed to fetch history from database")
+			} else {
+				newHistoryLimit := int(newHistoryValue.Int64)
+				log.Info().Str("userId", txtid).Int("newHistoryLimit", newHistoryLimit).Msg("Fresh DB lookup result")
+				if newHistoryLimit > 0 {
+					// Update the context for this request
+					historyLimit = newHistoryLimit
+					log.Info().Str("userId", txtid).Int("historyLimit", historyLimit).Msg("Using fresh history value from DB")
+				}
+			}
+			
+			if historyLimit == 0 {
+				s.Respond(w, r, http.StatusNotImplemented, errors.New("message history is disabled for this user"))
+				return
+			}
+		}
+		chatJID := r.URL.Query().Get("chat_jid")
+		if chatJID == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("chat_jid is required"))
+			return
+		}
+
+		// If chat_jid is "index", return mapping of all instances to their chat_jids
+		if chatJID == "index" {
+			var query string
+			if s.db.DriverName() == "postgres" {
+				query = `
+					SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
+					FROM message_history 
+					GROUP BY user_id, chat_jid 
+					ORDER BY user_id, last_message_time DESC`
+			} else { // sqlite
+				query = `
+					SELECT user_id, chat_jid, MAX(timestamp) as last_message_time
+					FROM message_history 
+					GROUP BY user_id, chat_jid 
+					ORDER BY user_id, last_message_time DESC`
+			}
+
+			type ChatMapping struct {
+				UserID          string `json:"user_id" db:"user_id"`
+				ChatJID         string `json:"chat_jid" db:"chat_jid"`
+				LastMessageTime string `json:"last_message_time" db:"last_message_time"`
+			}
+
+			var mappings []ChatMapping
+			err := s.db.Select(&mappings, query)
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get chat mappings: %w", err))
+				return
+			}
+
+			// Build the response map with chats ordered by most recent message
+			type ChatInfo struct {
+				ChatJID     string `json:"chat_jid"`
+				LastUpdated string `json:"last_updated"`
+			}
+			
+			result := make(map[string][]ChatInfo)
+			for _, mapping := range mappings {
+				// Parse the timestamp and format it properly to remove monotonic clock info
+				var formattedTime string
+				if parsedTime, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", mapping.LastMessageTime); err == nil {
+					formattedTime = parsedTime.Format(time.RFC3339Nano)
+				} else if parsedTime, err := time.Parse(time.RFC3339Nano, mapping.LastMessageTime); err == nil {
+					formattedTime = parsedTime.Format(time.RFC3339Nano)
+				} else {
+					// If parsing fails, clean up the monotonic clock part manually
+					formattedTime = strings.Split(mapping.LastMessageTime, " m=")[0]
+				}
+				
+				chatInfo := ChatInfo{
+					ChatJID:     mapping.ChatJID,
+					LastUpdated: formattedTime,
+				}
+				result[mapping.UserID] = append(result[mapping.UserID], chatInfo)
+			}
+
+			responseJson, err := json.Marshal(result)
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+			} else {
+				s.Respond(w, r, http.StatusOK, string(responseJson))
+			}
+			return
+		}
+
+		limitStr := r.URL.Query().Get("limit")
+		limit := 50 // Default limit
+		if limitStr != "" {
+			var err error
+			limit, err = strconv.Atoi(limitStr)
+			if err != nil {
+				s.Respond(w, r, http.StatusBadRequest, errors.New("invalid limit"))
+				return
+			}
+		}
+
+		var query string
+		if s.db.DriverName() == "postgres" {
+			query = `
+                SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link
+                FROM message_history
+                WHERE user_id = $1 AND chat_jid = $2
+                ORDER BY timestamp DESC
+                LIMIT $3`
+		} else { // sqlite
+			query = `
+                SELECT id, user_id, chat_jid, sender_jid, message_id, timestamp, message_type, text_content, media_link
+                FROM message_history
+                WHERE user_id = ? AND chat_jid = ?
+                ORDER BY timestamp DESC
+                LIMIT ?`
+		}
+
+		var messages []HistoryMessage
+		err := s.db.Select(&messages, query, txtid, chatJID, limit)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get message history: %w", err))
+			return
+		}
+
+		responseJson, err := json.Marshal(messages)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+	}
+}
+
+// save outgoing message to history
+func (s *server) saveOutgoingMessageToHistory(userID, chatJID, messageID, messageType, textContent, mediaLink string, historyLimit int) {
+	if historyLimit > 0 {
+		err := s.saveMessageToHistory(userID, chatJID, "me", messageID, messageType, textContent, mediaLink)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to save outgoing message to history")
+		} else {
+			err = s.trimMessageHistory(userID, chatJID, historyLimit)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to trim message history")
+			}
 		}
 	}
 }
