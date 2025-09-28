@@ -4793,15 +4793,15 @@ func (s *server) GetS3Config() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
 		var config struct {
-			Enabled       bool   `json:"enabled"`
-			Endpoint      string `json:"endpoint"`
-			Region        string `json:"region"`
-			Bucket        string `json:"bucket"`
-			AccessKey     string `json:"access_key"`
-			PathStyle     bool   `json:"path_style"`
-			PublicURL     string `json:"public_url"`
-			MediaDelivery string `json:"media_delivery"`
-			RetentionDays int    `json:"retention_days"`
+			Enabled       bool   `json:"enabled" db:"enabled"`
+			Endpoint      string `json:"endpoint" db:"endpoint"`
+			Region        string `json:"region" db:"region"`
+			Bucket        string `json:"bucket" db:"bucket"`
+			AccessKey     string `json:"access_key" db:"access_key"`
+			PathStyle     bool   `json:"path_style" db:"path_style"`
+			PublicURL     string `json:"public_url" db:"public_url"`
+			MediaDelivery string `json:"media_delivery" db:"media_delivery"`
+			RetentionDays int    `json:"retention_days" db:"retention_days"`
 		}
 
 		err := s.db.Get(&config, `
@@ -4818,9 +4818,12 @@ func (s *server) GetS3Config() http.HandlerFunc {
 			FROM users WHERE id = $1`, txtid)
 
 		if err != nil {
+			log.Error().Err(err).Str("userID", txtid).Msg("Failed to get S3 configuration from database")
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to get S3 configuration"))
 			return
 		}
+
+		log.Debug().Str("userID", txtid).Bool("enabled", config.Enabled).Str("endpoint", config.Endpoint).Str("bucket", config.Bucket).Msg("Retrieved S3 configuration from database")
 
 		// Don't return secret key for security
 		config.AccessKey = "***" // Mask access key
@@ -4841,15 +4844,15 @@ func (s *server) TestS3Connection() http.HandlerFunc {
 
 		// Get S3 config from database
 		var config struct {
-			Enabled       bool
-			Endpoint      string
-			Region        string
-			Bucket        string
-			AccessKey     string
-			SecretKey     string
-			PathStyle     bool
-			PublicURL     string
-			RetentionDays int
+			Enabled       bool   `db:"enabled"`
+			Endpoint      string `db:"endpoint"`
+			Region        string `db:"region"`
+			Bucket        string `db:"bucket"`
+			AccessKey     string `db:"access_key"`
+			SecretKey     string `db:"secret_key"`
+			PathStyle     bool   `db:"path_style"`
+			PublicURL     string `db:"public_url"`
+			RetentionDays int    `db:"retention_days"`
 		}
 
 		err := s.db.Get(&config, `
@@ -4858,17 +4861,20 @@ func (s *server) TestS3Connection() http.HandlerFunc {
 				s3_endpoint as endpoint,
 				s3_region as region,
 				s3_bucket as bucket,
-				s3_access_key as accesskey,
-				s3_secret_key as secretkey,
-				s3_path_style as pathstyle,
-				s3_public_url as publicurl,
-				s3_retention_days as retentiondays
+				s3_access_key as access_key,
+				s3_secret_key as secret_key,
+				s3_path_style as path_style,
+				s3_public_url as public_url,
+				s3_retention_days as retention_days
 			FROM users WHERE id = $1`, txtid)
 
 		if err != nil {
+			log.Error().Err(err).Str("userID", txtid).Msg("Failed to get S3 configuration from database for test connection")
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to get S3 configuration"))
 			return
 		}
+
+		log.Debug().Str("userID", txtid).Bool("enabled", config.Enabled).Str("endpoint", config.Endpoint).Str("bucket", config.Bucket).Msg("Retrieved S3 configuration from database for test connection")
 
 		if !config.Enabled {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("S3 is not enabled for this user"))
