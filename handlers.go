@@ -93,7 +93,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 				}
 				
 				// Debug logging for history value
-				log.Info().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
+log.Debug().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
 				
 				v := Values{map[string]string{
 					"Id":      txtid,
