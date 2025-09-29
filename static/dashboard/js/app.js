@@ -333,6 +333,14 @@ document.addEventListener('DOMContentLoaded', function() {
           prompt: 'Please select at least one event'
         }]
       },
+      history: {
+        identifier: 'history',
+        optional: true,
+        rules: [{
+          type: 'integer[0..]',
+          prompt: 'History must be a non-negative integer'
+        }]
+      },
       proxy_url: {
         identifier: 'proxy_url',
         optional: true,
@@ -447,6 +455,7 @@ async function addInstance(data) {
     events: data.events.join(','),
     webhook: data.webhook_url || '',
     expiration: 0,
+    history: parseInt(data.history) || 0,
     proxyConfig: proxyConfig,
     s3Config: s3Config
   };
@@ -1145,6 +1154,10 @@ function populateInstances(instances) {
                           <div class="item">
                               <div class="header">Subscribed Events</div>
                               <div class="content">${instance.events || 'Not configured'}</div>
+                          </div>
+                          <div class="item">
+                              <div class="header">Message History</div>
+                              <div class="content">${instance.history || 0} messages per chat</div>
                           </div>
                           <div class="item">
                               <div class="header">Proxy</div>
