@@ -4441,6 +4441,232 @@ func (s *server) AddUser() http.HandlerFunc {
 	}
 }
 
+// Edit user
+func (s *server) EditUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		type ProxyConfig struct {
+			Enabled  bool   `json:"enabled"`
+			ProxyURL string `json:"proxyURL"`
+		}
+
+
+		// Get the user ID from the request URL
+		vars := mux.Vars(r)
+		userID := vars["id"]
+
+		// Parse the request body
+		var user struct {
+			Name        string       `json:"name,omitempty"`
+			Token       string       `json:"token,omitempty"`
+			Webhook     string       `json:"webhook,omitempty"`
+			Expiration  int          `json:"expiration,omitempty"`
+			Events      string       `json:"events,omitempty"`
+			ProxyConfig *ProxyConfig `json:"proxyConfig,omitempty"`
+			S3Config    *S3Config    `json:"s3Config,omitempty"`
+			History     int          `json:"history,omitempty"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+			s.respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"code":    http.StatusBadRequest,
+				"error":   "invalid request payload",
+				"success": false,
+			})
+			return
+		}
+
+		log.Info().Interface("proxyConfig", user.ProxyConfig).Interface("s3Config", user.S3Config).Msg("Received values for proxyConfig and s3Config")
+		log.Debug().Interface("user", user).Msg("Received values for user")
+
+		// Check if user exists
+		var count int
+		if err := s.db.Get(&count, "SELECT COUNT(*) FROM users WHERE id = $1", userID); err != nil {
+			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"code":    http.StatusInternalServerError,
+				"error":   "database error",
+				"success": false,
+			})
+			return
+		}
+		if count == 0 {
+			s.respondWithJSON(w, http.StatusNotFound, map[string]interface{}{
+				"code":    http.StatusNotFound,
+				"error":   "user not found",
+				"success": false,
+			})
+			return
+		}
+
+		// Validate events if provided
+		if user.Events != "" {
+			eventList := strings.Split(user.Events, ",")
+			for _, event := range eventList {
+				event = strings.TrimSpace(event)
+				if event == "" {
+					continue // allow empty
+				}
+				if !Find(supportedEventTypes, event) {
+					s.respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+						"code":    http.StatusBadRequest,
+						"error":   "invalid event type",
+						"success": false,
+						"details": "invalid event: " + event,
+					})
+					return
+				}
+			}
+		}
+
+		// Build dynamic UPDATE query based on provided fields
+		query := "UPDATE users SET "
+		args := []interface{}{}
+		argIndex := 1
+
+		// Helper function to add field to query if provided
+		addField := func(fieldName string, value interface{}, condition bool) {
+			if condition {
+				if argIndex > 1 {
+					query += ", "
+				}
+				query += fieldName + " = $" + strconv.Itoa(argIndex)
+				args = append(args, value)
+				argIndex++
+			}
+		}
+
+		// Add fields to update
+		addField("name", user.Name, user.Name != "")
+		addField("token", user.Token, user.Token != "")
+		addField("webhook", user.Webhook, user.Webhook != "")
+		addField("expiration", user.Expiration, user.Expiration != 0)
+		addField("events", user.Events, user.Events != "")
+		addField("history", user.History, user.History != 0)
+
+		// Handle proxy config
+		if user.ProxyConfig != nil {
+			if user.ProxyConfig.Enabled {
+				addField("proxy_url", user.ProxyConfig.ProxyURL, true)
+			} else {
+				addField("proxy_url", nil, true)
+			}
+		}
+
+		// Handle S3 config
+		if user.S3Config != nil {
+			addField("s3_enabled", user.S3Config.Enabled, true)
+			addField("s3_endpoint", user.S3Config.Endpoint, true)
+			addField("s3_region", user.S3Config.Region, true)
+			addField("s3_bucket", user.S3Config.Bucket, true)
+			addField("s3_access_key", user.S3Config.AccessKey, true)
+			addField("s3_secret_key", user.S3Config.SecretKey, true)
+			addField("s3_path_style", user.S3Config.PathStyle, true)
+			addField("s3_public_url", user.S3Config.PublicURL, true)
+			addField("media_delivery", user.S3Config.MediaDelivery, true)
+			addField("s3_retention_days", user.S3Config.RetentionDays, true)
+		}
+
+		// If no fields to update, return early
+		if argIndex == 1 {
+			s.respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"code":    http.StatusBadRequest,
+				"error":   "no fields to update",
+				"success": false,
+			})
+			return
+		}
+
+		// Add WHERE clause
+		query += " WHERE id = $" + strconv.Itoa(argIndex)
+		args = append(args, userID)
+
+		// Execute the update
+		if _, err := s.db.Exec(query, args...); err != nil {
+			log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("admin DB error")
+			s.respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"code":    http.StatusInternalServerError,
+				"error":   "database error",
+				"success": false,
+			})
+			return
+		}
+
+		// Update S3Manager if S3 config was modified
+		if user.S3Config != nil {
+			if user.S3Config.Enabled {
+				s3Config := &S3Config{
+					Enabled:       user.S3Config.Enabled,
+					Endpoint:      user.S3Config.Endpoint,
+					Region:        user.S3Config.Region,
+					Bucket:        user.S3Config.Bucket,
+					AccessKey:     user.S3Config.AccessKey,
+					SecretKey:     user.S3Config.SecretKey,
+					PathStyle:     user.S3Config.PathStyle,
+					PublicURL:     user.S3Config.PublicURL,
+					MediaDelivery: user.S3Config.MediaDelivery,
+					RetentionDays: user.S3Config.RetentionDays,
+				}
+				_ = GetS3Manager().InitializeS3Client(userID, s3Config)
+			} else {
+				// Remove S3 client if disabled
+				GetS3Manager().RemoveClient(userID)
+			}
+		}
+
+		// Update userinfo cache for any modified fields
+		// First, get the current user token to find the cache entry
+		var currentToken string
+		err := s.db.Get(&currentToken, "SELECT token FROM users WHERE id = $1", userID)
+		if err != nil {
+			log.Error().Err(err).Str("userID", userID).Msg("Failed to get user token for cache update")
+		} else {
+			// Get current cached userinfo if it exists
+			if cachedUserInfo, found := userinfocache.Get(currentToken); found {
+				updatedUserInfo := cachedUserInfo.(Values)
+
+				// Update cache fields that were modified
+				if user.Name != "" {
+					updatedUserInfo = updateUserInfo(updatedUserInfo, "Name", user.Name).(Values)
+				}
+				if user.Token != "" {
+					// If token changed, we need to update the cache key
+					updatedUserInfo = updateUserInfo(updatedUserInfo, "Token", user.Token).(Values)
+					// Remove old cache entry and add new one with new token
+					userinfocache.Delete(currentToken)
+					currentToken = user.Token
+				}
+				if user.Webhook != "" {
+					updatedUserInfo = updateUserInfo(updatedUserInfo, "Webhook", user.Webhook).(Values)
+				}
+				if user.Events != "" {
+					updatedUserInfo = updateUserInfo(updatedUserInfo, "Events", user.Events).(Values)
+				}
+				if user.History != 0 {
+					updatedUserInfo = updateUserInfo(updatedUserInfo, "History", strconv.Itoa(user.History)).(Values)
+				}
+				if user.ProxyConfig != nil {
+					if user.ProxyConfig.Enabled {
+						updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", user.ProxyConfig.ProxyURL).(Values)
+					} else {
+						updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", "").(Values)
+					}
+				}
+
+				// Update the cache
+				userinfocache.Set(currentToken, updatedUserInfo, cache.NoExpiration)
+				log.Info().Str("userID", userID).Msg("User info cache updated after edit")
+			}
+		}
+
+		s.respondWithJSON(w, http.StatusOK, map[string]interface{}{
+			"code":    http.StatusOK,
+			"message": "user updated successfully",
+			"success": true,
+		})
+	}
+}
+
 // Delete user
 func (s *server) DeleteUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
