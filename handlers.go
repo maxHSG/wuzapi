@@ -91,10 +91,10 @@ func (s *server) authalice(next http.Handler) http.Handler {
 				if history.Valid {
 					historyStr = fmt.Sprintf("%d", history.Int64)
 				}
-				
+
 				// Debug logging for history value
-log.Debug().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
-				
+				log.Debug().Str("userId", txtid).Bool("historyValid", history.Valid).Int64("historyValue", history.Int64).Str("historyStr", historyStr).Msg("User authentication - history debug")
+
 				v := Values{map[string]string{
 					"Id":      txtid,
 					"Name":    name,
@@ -4451,7 +4451,6 @@ func (s *server) EditUser() http.HandlerFunc {
 			ProxyURL string `json:"proxyURL"`
 		}
 
-
 		// Get the user ID from the request URL
 		vars := mux.Vars(r)
 		userID := vars["id"]
@@ -5046,6 +5045,27 @@ func (s *server) ConfigureS3() http.HandlerFunc {
 			GetS3Manager().RemoveClient(txtid)
 		}
 
+		// Update userinfocache with S3 configuration
+		token := r.Context().Value("userinfo").(Values).Get("Token")
+		if cachedUserInfo, found := userinfocache.Get(token); found {
+			updatedUserInfo := cachedUserInfo.(Values)
+
+			// Update S3-related fields in cache
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Enabled", strconv.FormatBool(t.Enabled)).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Endpoint", t.Endpoint).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Region", t.Region).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3Bucket", t.Bucket).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3AccessKey", t.AccessKey).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3SecretKey", t.SecretKey).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3PathStyle", strconv.FormatBool(t.PathStyle)).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3PublicURL", t.PublicURL).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "MediaDelivery", t.MediaDelivery).(Values)
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "S3RetentionDays", strconv.Itoa(t.RetentionDays)).(Values)
+
+			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
+			log.Info().Str("userID", txtid).Msg("User info cache updated with S3 configuration")
+		}
+
 		response := map[string]interface{}{
 			"Details": "S3 configuration saved successfully",
 			"Enabled": t.Enabled,
@@ -5240,16 +5260,16 @@ func (s *server) GetHistory() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		historyStr := r.Context().Value("userinfo").(Values).Get("History")
 		historyLimit, _ := strconv.Atoi(historyStr)
-		
+
 		// Debug logging
 		log.Info().Str("userId", txtid).Str("historyStr", historyStr).Int("historyLimit", historyLimit).Msg("GetHistory debug info")
-		
+
 		if historyLimit == 0 {
 			// Before returning error, try refreshing the cache in case the DB was updated
 			token := r.Context().Value("userinfo").(Values).Get("Token")
 			log.Info().Str("userId", txtid).Str("token", token).Msg("History is 0, invalidating cache and trying fresh DB lookup")
 			userinfocache.Delete(token)
-			
+
 			// Re-fetch from database
 			var newHistoryValue sql.NullInt64
 			err := s.db.QueryRow("SELECT COALESCE(history, 0) FROM users WHERE id = $1", txtid).Scan(&newHistoryValue)
@@ -5264,7 +5284,7 @@ func (s *server) GetHistory() http.HandlerFunc {
 					log.Info().Str("userId", txtid).Int("historyLimit", historyLimit).Msg("Using fresh history value from DB")
 				}
 			}
-			
+
 			if historyLimit == 0 {
 				s.Respond(w, r, http.StatusNotImplemented, errors.New("message history is disabled for this user"))
 				return
@@ -5311,7 +5331,7 @@ func (s *server) GetHistory() http.HandlerFunc {
 				ChatJID     string `json:"chat_jid"`
 				LastUpdated string `json:"last_updated"`
 			}
-			
+
 			result := make(map[string][]ChatInfo)
 			for _, mapping := range mappings {
 				// Parse the timestamp and format it properly to remove monotonic clock info
@@ -5324,7 +5344,7 @@ func (s *server) GetHistory() http.HandlerFunc {
 					// If parsing fails, clean up the monotonic clock part manually
 					formattedTime = strings.Split(mapping.LastMessageTime, " m=")[0]
 				}
-				
+
 				chatInfo := ChatInfo{
 					ChatJID:     mapping.ChatJID,
 					LastUpdated: formattedTime,
