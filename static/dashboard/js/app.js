@@ -273,6 +273,17 @@ document.addEventListener('DOMContentLoaded', function() {
     loadS3Config();
   });
 
+  // History Configuration
+  document.getElementById('historyConfig').addEventListener('click', function() {
+    $('#modalHistoryConfig').modal({
+      onApprove: function() {
+        saveHistoryConfig();
+        return false;
+      }
+    }).modal('show');
+    loadHistoryConfig();
+  });
+
   // Proxy Configuration
   document.getElementById('proxyConfig').addEventListener('click', function() {
     $('#modalProxyConfig').modal({
@@ -1506,6 +1517,66 @@ async function deleteS3Config() {
     console.error('Error:', error);
   } finally {
     $('#deleteS3Config').removeClass('loading disabled');
+  }
+}
+
+// History Configuration Functions
+async function loadHistoryConfig() {
+  const token = getLocalStorageItem('token');
+  const myHeaders = new Headers();
+  myHeaders.append('token', token);
+  
+  try {
+    // Get user status to check proxy_config
+    const res = await fetch(baseUrl + "/session/status", {
+      method: "GET",
+      headers: myHeaders
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 200 && data.data && data.data.history) {
+        const historyConfig = data.data.history;
+        $('#history').val(historyConfig);
+        
+      } else {
+        $('#history').val('0');
+      }
+    }
+  } catch (error) {
+    console.error('Error loading history config:', error);
+  }
+}
+
+async function saveHistoryConfig() {
+  const token = getLocalStorageItem('token');
+  const myHeaders = new Headers();
+  myHeaders.append('token', token);
+  myHeaders.append('Content-Type', 'application/json');
+  
+  const historyConfig = parseInt($('#history').val());
+  
+  const config = {
+    history: historyConfig,
+  };
+  
+  try {
+    const res = await fetch(baseUrl + "/session/history", {
+      method: "POST",
+      headers: myHeaders,
+      body: JSON.stringify(config)
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      showSuccess('History configuration saved successfully');
+      $('#modalHistoryConfig').modal('hide');
+    } else {
+      showError('Failed to save history configuration: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    showError('Error saving history configuration');
+    console.error('Error:', error);
   }
 }
 
