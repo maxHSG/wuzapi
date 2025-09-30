@@ -4883,6 +4883,65 @@ func validateMessageFields(phone string, stanzaid *string, participant *string) 
 	return recipient, nil
 }
 
+// Set history
+func (s *server) SetHistory() http.HandlerFunc {
+	type historyStruct struct {
+		History int `json:"history"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+
+		// Check if client exists and is connected
+
+		if clientManager.GetWhatsmeowClient(txtid) == nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("no session"))
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		var t historyStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
+			return
+		}
+
+		// Validate history value
+		if t.History < 0 {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("history cannot be negative"))
+			return
+		}
+
+		// Store history configuration in database
+		_, err = s.db.Exec("UPDATE users SET history = $1 WHERE id = $2", t.History, txtid)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to save history configuration"))
+			return
+		}
+
+		token := r.Context().Value("userinfo").(Values).Get("Token")
+		if cachedUserInfo, found := userinfocache.Get(token); found {
+			updatedUserInfo := cachedUserInfo.(Values)
+			// Update history in cache
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "History", strconv.Itoa(t.History)).(Values)
+			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
+			log.Info().Str("userID", txtid).Msg("User info cache updated with History configuration")
+		}
+
+		response := map[string]interface{}{
+			"Details": "History configured successfully",
+			"History": t.History,
+		}
+		responseJson, err := json.Marshal(response)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+	}
+}
+
 // Set proxy
 func (s *server) SetProxy() http.HandlerFunc {
 	type proxyStruct struct {
@@ -4914,6 +4973,15 @@ func (s *server) SetProxy() http.HandlerFunc {
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to remove proxy configuration"))
 				return
+			}
+
+			token := r.Context().Value("userinfo").(Values).Get("Token")
+			if cachedUserInfo, found := userinfocache.Get(token); found {
+				updatedUserInfo := cachedUserInfo.(Values)
+				// Update proxy in cache
+				updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", "").(Values)
+				userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
+				log.Info().Str("userID", txtid).Msg("User info cache updated with Proxy configuration")
 			}
 
 			response := map[string]interface{}{"Details": "Proxy disabled successfully"}
@@ -4949,6 +5017,15 @@ func (s *server) SetProxy() http.HandlerFunc {
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to save proxy configuration"))
 			return
+		}
+
+		token := r.Context().Value("userinfo").(Values).Get("Token")
+		if cachedUserInfo, found := userinfocache.Get(token); found {
+			updatedUserInfo := cachedUserInfo.(Values)
+			// Update proxy in cache
+			updatedUserInfo = updateUserInfo(updatedUserInfo, "Proxy", t.ProxyURL).(Values)
+			userinfocache.Set(token, updatedUserInfo, cache.NoExpiration)
+			log.Info().Str("userID", txtid).Msg("User info cache updated with Proxy configuration")
 		}
 
 		response := map[string]interface{}{
