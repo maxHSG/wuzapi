@@ -1748,6 +1748,7 @@ func (s *server) SendList() http.HandlerFunc {
 
 		var req listRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
 		}
@@ -1852,6 +1853,7 @@ func (s *server) SendList() http.HandlerFunc {
 			return
 		}
 
+		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message list sent")
 		response := map[string]interface{}{
 			"Details":   "Sent",
 			"Timestamp": resp.Timestamp,
