@@ -1162,11 +1162,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}
 
-			// Format text content for replies (including reactions)
-			if replyToMessageID != "" && textContent != "" {
-				textContent = fmt.Sprintf(">%s\n%s", replyToMessageID, textContent)
-			}
-
 			// Try to get media link from S3 data if available
 			if s3Data, ok := postmap["s3"].(map[string]interface{}); ok {
 				if url, ok := s3Data["url"].(string); ok {
@@ -1176,7 +1171,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 			// Only save if there's meaningful content (including delete messages)
 			if textContent != "" || mediaLink != "" || (messageType != "text" && messageType != "reaction") || messageType == "delete" {
-				err := mycli.s.saveMessageToHistory(mycli.userID, evt.Info.Chat.String(), evt.Info.Sender.String(), evt.Info.ID, messageType, textContent, mediaLink)
+				err := mycli.s.saveMessageToHistory(mycli.userID, evt.Info.Chat.String(), evt.Info.Sender.String(), evt.Info.ID, messageType, textContent, mediaLink, replyToMessageID)
 				if err != nil {
 					log.Error().Err(err).Msg("Failed to save message to history")
 				} else {

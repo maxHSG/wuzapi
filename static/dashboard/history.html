@@ -782,14 +782,7 @@ function processMessageContent(message, messageMap) {
     const deletedMessage = messageMap[deletedMessageId];
     
     if (deletedMessage) {
-      let deletedContent = deletedMessage.text_content || '[Media message]';
-      
-      // Remove any quote pattern from the deleted content
-      const quotePattern = /^>\s*([A-Z0-9]{16,})\s*\n(.*)$/s;
-      const match = deletedContent.match(quotePattern);
-      if (match) {
-        deletedContent = match[2];
-      }
+      let deletedContent = getMessageDisplayContent(deletedMessage);
       
       // Truncate if too long
       if (deletedContent.length > 100) {
@@ -810,28 +803,14 @@ function processMessageContent(message, messageMap) {
     content = '[Media message]';
   }
   
-  // Check if this is a quoted/reply message
-  // Pattern: > followed by [A-Z0-9] 16+ characters, then newline
-  const quotePattern = /^>\s*([A-Z0-9]{16,})\s*\n(.*)$/s;
-  const match = content.match(quotePattern);
-  
-  if (match) {
-    const quotedMessageId = match[1];
-    const actualContent = match[2];
-    
-    // Look up the quoted message
-    const quotedMessage = messageMap[quotedMessageId];
+  // Check if this message has a quoted message
+  if (message.quoted_message_id && message.quoted_message_id.trim() !== '') {
+    const quotedMessage = messageMap[message.quoted_message_id];
     
     let quoteDisplay = '';
     if (quotedMessage) {
       const quotedSender = getSenderDisplayName(quotedMessage.sender_jid);
-      let quotedContent = quotedMessage.text_content || '[Media message]';
-      
-      // Remove any quote pattern from the quoted content itself (nested quotes)
-      const nestedQuoteMatch = quotedContent.match(quotePattern);
-      if (nestedQuoteMatch) {
-        quotedContent = nestedQuoteMatch[2]; // Extract the actual content after the quote ID
-      }
+      let quotedContent = getMessageDisplayContent(quotedMessage);
       
       // Truncate long quoted content
       if (quotedContent.length > 100) {
@@ -843,13 +822,22 @@ function processMessageContent(message, messageMap) {
         <div class="quote-content">${quotedContent}</div>
       </div>`;
     } else {
-      quoteDisplay = '<div class="quoted-message"><i>no context in history</i></div>';
+      quoteDisplay = '<div class="quoted-message"><i>quoted message not in history</i></div>';
     }
     
-    return quoteDisplay + '<div class="reply-content">' + actualContent + '</div>';
+    // The content is the reply text itself
+    return quoteDisplay + '<div class="reply-content">' + content + '</div>';
   }
   
   return content;
+}
+
+function getMessageDisplayContent(message) {
+  if (message.media_link) {
+    return '[Media message]';
+  }
+
+  return message.text_content || '[Media message]';
 }
 
 function toggleMessageJson(row, message) {

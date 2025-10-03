@@ -55,6 +55,11 @@ var migrations = []Migration{
 		Name:  "add_message_history",
 		UpSQL: addMessageHistorySQL,
 	},
+	{
+		ID:    6,
+		Name:  "add_quoted_message_id",
+		UpSQL: addQuotedMessageIDSQL,
+	},
 }
 
 const changeIDToStringSQL = `
@@ -173,6 +178,19 @@ BEGIN
         ALTER TABLE users ADD COLUMN history INTEGER DEFAULT 0;
     END IF;
 END $$;
+`
+
+const addQuotedMessageIDSQL = `
+-- PostgreSQL version
+DO $$
+BEGIN
+    -- Add quoted_message_id column to message_history table if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'message_history' AND column_name = 'quoted_message_id') THEN
+        ALTER TABLE message_history ADD COLUMN quoted_message_id TEXT;
+    END IF;
+END $$;
+
+-- SQLite version (handled in code)
 `
 
 // GenerateRandomID creates a random string ID
@@ -372,6 +390,13 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 				// Add history column to users table
 				err = addColumnIfNotExistsSQLite(tx, "users", "history", "INTEGER DEFAULT 0")
 			}
+		} else {
+			_, err = tx.Exec(migration.UpSQL)
+		}
+	} else if migration.ID == 6 {
+		if db.DriverName() == "sqlite" {
+			// Add quoted_message_id column to message_history table for SQLite
+			err = addColumnIfNotExistsSQLite(tx, "message_history", "quoted_message_id", "TEXT")
 		} else {
 			_, err = tx.Exec(migration.UpSQL)
 		}
