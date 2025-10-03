@@ -168,15 +168,9 @@ BEGIN
             message_type TEXT NOT NULL,
             text_content TEXT,
             media_link TEXT,
-            quoted_message_id TEXT,
             UNIQUE(user_id, message_id)
         );
         CREATE INDEX idx_message_history_user_chat_timestamp ON message_history (user_id, chat_jid, timestamp DESC);
-    END IF;
-    
-    -- Add quoted_message_id column to message_history table if it doesn't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'message_history' AND column_name = 'quoted_message_id') THEN
-        ALTER TABLE message_history ADD COLUMN quoted_message_id TEXT;
     END IF;
     
     -- Add history column to users table if it doesn't exist
@@ -384,7 +378,6 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 					message_type TEXT NOT NULL,
 					text_content TEXT,
 					media_link TEXT,
-					quoted_message_id TEXT,
 					UNIQUE(user_id, message_id)
 				)`)
 			if err == nil {
@@ -392,10 +385,6 @@ func applyMigration(db *sqlx.DB, migration Migration) error {
 				_, err = tx.Exec(`
 					CREATE INDEX IF NOT EXISTS idx_message_history_user_chat_timestamp 
 					ON message_history (user_id, chat_jid, timestamp DESC)`)
-			}
-			if err == nil {
-				// Add history column to users table
-				err = addColumnIfNotExistsSQLite(tx, "users", "history", "INTEGER DEFAULT 0")
 			}
 			if err == nil {
 				// Add history column to users table

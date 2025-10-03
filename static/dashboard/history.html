@@ -836,14 +836,8 @@ function getMessageDisplayContent(message) {
   if (message.media_link) {
     return '[Media message]';
   }
-  
-  const content = message.text_content || '';
-  
-  if (!content) {
-    return '[Media message]';
-  }
-  
-  return content;
+
+  return message.text_content || '[Media message]';
 }
 
 function toggleMessageJson(row, message) {
