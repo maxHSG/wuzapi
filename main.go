@@ -34,26 +34,32 @@ type server struct {
 
 // Replace the global variables
 var (
-	address       = flag.String("address", "0.0.0.0", "Bind IP Address")
-	port          = flag.String("port", "8080", "Listen Port")
-	waDebug       = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
-	logType       = flag.String("logtype", "console", "Type of log output (console or json)")
-	skipMedia     = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
-	osName        = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
-	colorOutput   = flag.Bool("color", false, "Enable colored output for console logs")
-	sslcert       = flag.String("sslcertificate", "", "SSL Certificate File")
-	sslprivkey    = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
-	adminToken    = flag.String("admintoken", "", "Security Token to authorize admin actions (list/create/remove users)")
-	globalWebhook = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
-	versionFlag   = flag.Bool("version", false, "Display version information and exit")
+	address             = flag.String("address", "0.0.0.0", "Bind IP Address")
+	port                = flag.String("port", "8080", "Listen Port")
+	waDebug             = flag.String("wadebug", "", "Enable whatsmeow debug (INFO or DEBUG)")
+	logType             = flag.String("logtype", "console", "Type of log output (console or json)")
+	skipMedia           = flag.Bool("skipmedia", false, "Do not attempt to download media in messages")
+	osName              = flag.String("osname", "Mac OS 10", "Connection OSName in Whatsapp")
+	colorOutput         = flag.Bool("color", false, "Enable colored output for console logs")
+	sslcert             = flag.String("sslcertificate", "", "SSL Certificate File")
+	sslprivkey          = flag.String("sslprivatekey", "", "SSL Certificate Private Key File")
+	adminToken          = flag.String("admintoken", "", "Security Token to authorize admin actions (list/create/remove users)")
+	globalEncryptionKey = flag.String("globalencryptionkey", "", "Encryption key for sensitive data (32 bytes)")
+	globalHMACKey       = flag.String("globalhmackey", "", "Global HMAC key for webhook signing")
+	globalWebhook       = flag.String("globalwebhook", "", "Global webhook URL to receive all events from all users")
+	versionFlag         = flag.Bool("version", false, "Display version information and exit")
 
-	container     *sqlstore.Container
-	clientManager = NewClientManager()
-	killchannel   = make(map[string](chan bool))
-	userinfocache = cache.New(5*time.Minute, 10*time.Minute)
+	globalHMACKeyEncrypted []byte
+
+	container        *sqlstore.Container
+	clientManager    = NewClientManager()
+	killchannel      = make(map[string](chan bool))
+	userinfocache    = cache.New(5*time.Minute, 10*time.Minute)
+	lastMessageCache = cache.New(24*time.Hour, 24*time.Hour)
+	globalHTTPClient = &http.Client{Timeout: 60 * time.Second}
 )
 
-const version = "1.0.0"
+const version = "1.0.3"
 
 func init() {
 	err := godotenv.Load()
@@ -137,6 +143,23 @@ func init() {
 		}
 	}
 
+	if *globalEncryptionKey == "" {
+		if v := os.Getenv("WUZAPI_GLOBAL_ENCRYPTION_KEY"); v != "" {
+			*globalEncryptionKey = v
+			log.Info().Msg("Encryption key loaded from environment variable")
+		} else {
+			// Generate a random key if none provided
+			const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+			b := make([]byte, 32)
+			for i := range b {
+				b[i] = charset[rand.Intn(len(charset))]
+			}
+			*globalEncryptionKey = string(b)
+			log.Warn().Str("global_encryption_key", *globalEncryptionKey).Msg("No WUZAPI_GLOBAL_ENCRYPTION_KEY provided, generated a random one. " +
+				"SAVE THIS KEY TO YOUR .ENV FILE OR ALL ENCRYPTED DATA WILL BE LOST ON RESTART!")
+		}
+	}
+
 	// Check for global webhook in environment variable
 	if *globalWebhook == "" {
 		if v := os.Getenv("WUZAPI_GLOBAL_WEBHOOK"); v != "" {
@@ -145,6 +168,33 @@ func init() {
 		}
 	} else {
 		log.Info().Str("global_webhook", *globalWebhook).Msg("Global webhook configured from command line")
+	}
+
+	// Check for global HMAC key in environment variable
+	if *globalHMACKey == "" {
+		if v := os.Getenv("WUZAPI_GLOBAL_HMAC_KEY"); v != "" {
+			*globalHMACKey = v
+			log.Info().Msg("Global HMAC key configured from environment variable")
+		} else {
+			// Generate a random key if none provided
+			const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+			b := make([]byte, 32)
+			for i := range b {
+				b[i] = charset[rand.Intn(len(charset))]
+			}
+			*globalHMACKey = string(b)
+			log.Warn().Str("global_hmac_key", *globalHMACKey).Msg("No WUZAPI_GLOBAL_HMAC_KEY provided, generated a random one")
+		}
+
+	} else {
+		log.Info().Msg("Global HMAC key configured from command line")
+	}
+
+	globalHMACKeyEncrypted, err = encryptHMACKey(*globalHMACKey)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to encrypt global HMAC key")
+	} else {
+		log.Info().Msg("Global HMAC key encrypted successfully")
 	}
 
 	InitRabbitMQ()
@@ -190,8 +240,8 @@ func main() {
 	var storeConnStr string
 	if config.Type == "postgres" {
 		storeConnStr = fmt.Sprintf(
-			"user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
-			config.User, config.Password, config.Name, config.Host, config.Port,
+			"user=%s password=%s dbname=%s host=%s port=%s sslmode=%s",
+			config.User, config.Password, config.Name, config.Host, config.Port, config.SSLMode,
 		)
 		container, err = sqlstore.New(context.Background(), "postgres", storeConnStr, dbLog)
 	} else {

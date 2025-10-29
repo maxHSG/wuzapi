@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,11 +29,10 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"golang.org/x/net/proxy"
 )
 
-var historySyncID int32
-
-// Declaração do campo db como *sqlx.DB
+// db field declaration as *sqlx.DB
 type MyClient struct {
 	WAClient       *whatsmeow.Client
 	eventHandlerID uint32
@@ -39,6 +40,7 @@ type MyClient struct {
 	token          string
 	subscriptions  []string
 	db             *sqlx.DB
+	s              *server
 }
 
 func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
@@ -59,11 +61,15 @@ func sendToGlobalWebHook(jsonData []byte, token string, userID string) {
 			"userID":       userID,
 			"instanceName": instance_name,
 		}
-		callHook(*globalWebhook, globalData, userID)
+		callHookWithHmac(*globalWebhook, globalData, userID, globalHMACKeyEncrypted)
 	}
 }
 
 func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID string, token string) {
+	sendToUserWebHookWithHmac(webhookurl, path, jsonData, userID, token, nil)
+}
+
+func sendToUserWebHookWithHmac(webhookurl string, path string, jsonData []byte, userID string, token string, encryptedHmacKey []byte) {
 
 	instance_name := ""
 	userinfo, found := userinfocache.Get(token)
@@ -80,13 +86,14 @@ func sendToUserWebHook(webhookurl string, path string, jsonData []byte, userID s
 
 	if webhookurl != "" {
 		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
+
 		if path == "" {
-			go callHook(webhookurl, data, userID)
+			go callHookWithHmac(webhookurl, data, userID, encryptedHmacKey)
 		} else {
 			// Create a channel to capture the error from the goroutine
 			errChan := make(chan error, 1)
 			go func() {
-				err := callHookFile(webhookurl, data, userID, path)
+				err := callHookFileWithHmac(webhookurl, data, userID, path, encryptedHmacKey)
 				errChan <- err
 			}()
 
@@ -180,13 +187,25 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 		return
 	}
 
-	// Call user webhook if configured
-	sendToUserWebHook(webhookurl, path, jsonData, mycli.userID, mycli.token)
+	// Get HMAC key for this user
+	var encryptedHmacKey []byte
+	if userinfo, found := userinfocache.Get(mycli.token); found {
+		encryptedB64 := userinfo.(Values).Get("HmacKeyEncrypted")
+		if encryptedB64 != "" {
+			var err error
+			encryptedHmacKey, err = base64.StdEncoding.DecodeString(encryptedB64)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to decode HMAC key from cache")
+			}
+		}
+	}
+
+	sendToUserWebHookWithHmac(webhookurl, path, jsonData, mycli.userID, mycli.token, encryptedHmacKey)
 
 	// Get global webhook if configured
 	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
 
-	go sendToGlobalRabbit(jsonData)
+	go sendToGlobalRabbit(jsonData, mycli.token, mycli.userID)
 }
 
 func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
@@ -203,7 +222,7 @@ func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userI
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
-	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,proxy_url,CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled,media_delivery FROM users WHERE connected=1")
+	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,proxy_url,CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled,media_delivery,COALESCE(history, 0) as history,hmac_key FROM users WHERE connected=1")
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
 		return
@@ -219,22 +238,31 @@ func (s *server) connectOnStartup() {
 		proxy_url := ""
 		s3_enabled := ""
 		media_delivery := ""
-		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &proxy_url, &s3_enabled, &media_delivery)
+		var history int
+		var hmac_key []byte
+		err = rows.Scan(&txtid, &name, &token, &jid, &webhook, &events, &proxy_url, &s3_enabled, &media_delivery, &history, &hmac_key)
 		if err != nil {
 			log.Error().Err(err).Msg("DB Problem")
 			return
 		} else {
+			hmacKeyEncrypted := ""
+			if len(hmac_key) > 0 {
+				hmacKeyEncrypted = base64.StdEncoding.EncodeToString(hmac_key)
+			}
+
 			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
 			v := Values{map[string]string{
-				"Id":            txtid,
-				"Name":          name,
-				"Jid":           jid,
-				"Webhook":       webhook,
-				"Token":         token,
-				"Proxy":         proxy_url,
-				"Events":        events,
-				"S3Enabled":     s3_enabled,
-				"MediaDelivery": media_delivery,
+				"Id":               txtid,
+				"Name":             name,
+				"Jid":              jid,
+				"Webhook":          webhook,
+				"Token":            token,
+				"Proxy":            proxy_url,
+				"Events":           events,
+				"S3Enabled":        s3_enabled,
+				"MediaDelivery":    media_delivery,
+				"History":          fmt.Sprintf("%d", history),
+				"HmacKeyEncrypted": hmacKeyEncrypted,
 			}}
 			userinfocache.Set(token, v, cache.NoExpiration)
 			// Gets and set subscription to webhook events
@@ -384,7 +412,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	store.DeviceProps.Os = osName
 
 	clientManager.SetWhatsmeowClient(userID, client)
-	mycli := MyClient{client, 1, userID, token, subscriptions, s.db}
+	mycli := MyClient{client, 1, userID, token, subscriptions, s.db, s}
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 
 	// CORREÇÃO: Armazenar o MyClient no clientManager
@@ -410,7 +438,28 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	var proxyURL string
 	err = s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID)
 	if err == nil && proxyURL != "" {
-		httpClient.SetProxy(proxyURL)
+
+		parsed, perr := url.Parse(proxyURL)
+		if perr != nil {
+			log.Warn().Err(perr).Str("proxy", proxyURL).Msg("Invalid proxy URL, skipping proxy setup")
+		} else {
+			if parsed.Scheme == "socks5" || parsed.Scheme == "socks5h" {
+				// Build SOCKS dialer from URL (supports user:pass in URL)
+				dialer, derr := proxy.FromURL(parsed, nil)
+				if derr != nil {
+					log.Warn().Err(derr).Str("proxy", proxyURL).Msg("Failed to build SOCKS proxy dialer, skipping proxy setup")
+				} else {
+					// Apply proxy to both clients now that we know it's valid.
+					httpClient.SetProxy(proxyURL)
+					client.SetSOCKSProxy(dialer, whatsmeow.SetProxyOptions{})
+				}
+			} else {
+				// For http/https, apply to both clients.
+				httpClient.SetProxy(proxyURL)
+				client.SetProxyAddress(parsed.String(), whatsmeow.SetProxyOptions{})
+			}
+		}
+
 	}
 	clientManager.SetHTTPClient(userID, httpClient)
 
@@ -464,6 +513,12 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
+					// Send webhook notifying QR timeout before cleanup
+					postmap := make(map[string]interface{})
+					postmap["event"] = evt.Event
+					postmap["type"] = "QRTimeout"
+					sendEventWithWebHook(&mycli, postmap, "")
+
 					sqlStmt := `UPDATE users SET qrcode='' WHERE id=$1`
 					_, err := s.db.Exec(sqlStmt, userID)
 					if err != nil {
@@ -605,6 +660,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			MediaDelivery string `db:"media_delivery"`
 		}
 
+		lastMessageCache.Set(mycli.userID, &evt.Info, cache.DefaultExpiration)
 		myuserinfo, found := userinfocache.Get(mycli.token)
 		if !found {
 			err := mycli.db.Get(&s3Config, "SELECT CASE WHEN s3_enabled = 1 THEN 'true' ELSE 'false' END AS s3_enabled, media_delivery FROM users WHERE id = $1", txtid)
@@ -1035,6 +1091,222 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					log.Info().Str("path", tmpPath).Msg("Temporary file deleted")
 				}
 			}
+
+			sticker := evt.Message.GetStickerMessage()
+			if sticker != nil {
+				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)
+				errDir := os.MkdirAll(tmpDirectory, 0751)
+				if errDir != nil {
+					log.Error().Err(errDir).Msg("Could not create temporary directory")
+					return
+				}
+
+				// download the sticker using the DownloadableMessage interface
+				data, err := mycli.WAClient.Download(context.Background(), sticker)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to download sticker")
+					return
+				}
+
+				// tries to infer extension by mimetype; fallback to .webp
+				exts, _ := mime.ExtensionsByType(sticker.GetMimetype())
+				ext := ".webp"
+				if len(exts) > 0 && exts[0] != "" {
+					ext = exts[0]
+				}
+
+				tmpPath := filepath.Join(tmpDirectory, evt.Info.ID+ext)
+				if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+					log.Error().Err(err).Msg("Failed to save sticker to temporary file")
+					return
+				}
+
+				// if using S3 (same stream as other media)
+				if s3Config.Enabled == "true" && (s3Config.MediaDelivery == "s3" || s3Config.MediaDelivery == "both") {
+					isIncoming := evt.Info.IsFromMe == false
+					contactJID := evt.Info.Sender.String()
+					if evt.Info.IsGroup {
+						contactJID = evt.Info.Chat.String()
+					}
+					s3Data, err := GetS3Manager().ProcessMediaForS3(
+						context.Background(),
+						txtid,
+						contactJID,
+						evt.Info.ID,
+						data,
+						sticker.GetMimetype(),
+						filepath.Base(tmpPath),
+						isIncoming,
+					)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to upload sticker to S3")
+					} else {
+						postmap["s3"] = s3Data
+					}
+				}
+
+				// base64 (same output contract as other media)
+				if s3Config.MediaDelivery == "base64" || s3Config.MediaDelivery == "both" {
+					base64String, mimeType, err := fileToBase64(tmpPath)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to convert sticker to base64")
+						return
+					}
+					postmap["base64"] = base64String
+					postmap["mimeType"] = mimeType
+					postmap["fileName"] = filepath.Base(tmpPath)
+				}
+
+				// useful metadata (optional, but handy)
+				postmap["isSticker"] = true
+				postmap["stickerAnimated"] = sticker.GetIsAnimated()
+
+				if err := os.Remove(tmpPath); err != nil {
+					log.Error().Err(err).Msg("Failed to delete temporary file")
+				}
+			}
+
+		}
+
+		// Save message to history regardless of skipMedia setting
+		// Get user's history setting from cache
+		var historyLimit int
+		userinfo, found := userinfocache.Get(mycli.token)
+		if found {
+			historyStr := userinfo.(Values).Get("History")
+			historyLimit, _ = strconv.Atoi(historyStr)
+		} else {
+			log.Warn().Str("userID", mycli.userID).Msg("User info not found in cache, skipping history")
+			historyLimit = 0
+		}
+
+		if historyLimit > 0 {
+			messageType := "text"
+			textContent := ""
+			mediaLink := ""
+			caption := ""
+			replyToMessageID := ""
+
+			// Check for delete messages first
+			if protocolMsg := evt.Message.GetProtocolMessage(); protocolMsg != nil && protocolMsg.GetType() == 0 {
+				messageType = "delete"
+				if protocolMsg.GetKey() != nil {
+					textContent = protocolMsg.GetKey().GetID() // Store the deleted message ID
+				}
+				log.Info().Str("deletedMessageID", textContent).Str("messageID", evt.Info.ID).Msg("Delete message detected")
+				// Check for reactions
+			} else if reaction := evt.Message.GetReactionMessage(); reaction != nil {
+				messageType = "reaction"
+				replyToMessageID = reaction.GetKey().GetID()
+				textContent = reaction.GetText() // This will be the emoji
+			} else if img := evt.Message.GetImageMessage(); img != nil {
+				messageType = "image"
+				caption = img.GetCaption()
+			} else if video := evt.Message.GetVideoMessage(); video != nil {
+				messageType = "video"
+				caption = video.GetCaption()
+			} else if audio := evt.Message.GetAudioMessage(); audio != nil {
+				messageType = "audio"
+			} else if doc := evt.Message.GetDocumentMessage(); doc != nil {
+				messageType = "document"
+				caption = doc.GetCaption()
+			} else if sticker := evt.Message.GetStickerMessage(); sticker != nil {
+				messageType = "sticker"
+			} else if contact := evt.Message.GetContactMessage(); contact != nil {
+				messageType = "contact"
+				textContent = contact.GetDisplayName()
+			} else if location := evt.Message.GetLocationMessage(); location != nil {
+				messageType = "location"
+				textContent = location.GetName()
+			}
+
+			// Extract text content for non-reaction and non-delete messages
+			if messageType != "reaction" && messageType != "delete" {
+				if conv := evt.Message.GetConversation(); conv != "" {
+					textContent = conv
+				} else if ext := evt.Message.GetExtendedTextMessage(); ext != nil {
+					textContent = ext.GetText()
+					// Check if this is a reply to another message
+					if contextInfo := ext.GetContextInfo(); contextInfo != nil && contextInfo.GetStanzaId() != "" {
+						replyToMessageID = contextInfo.GetStanzaId()
+					}
+				} else {
+					textContent = caption
+				}
+
+				// Set default text content for media messages without captions
+				if textContent == "" {
+					switch messageType {
+					case "image":
+						textContent = ":image:"
+					case "video":
+						textContent = ":video:"
+					case "audio":
+						textContent = ":audio:"
+					case "document":
+						textContent = ":document:"
+					case "sticker":
+						textContent = ":sticker:"
+					case "contact":
+						if textContent == "" {
+							textContent = ":contact:"
+						}
+					case "location":
+						if textContent == "" {
+							textContent = ":location:"
+						}
+					}
+				}
+			}
+
+			// Check for replies in regular conversation messages too
+			if messageType == "text" && replyToMessageID == "" {
+				// For regular text messages, check if there's context info indicating a reply
+				// This might be available in the message context
+				if conv := evt.Message.GetConversation(); conv != "" {
+					// Check if the message has reply context (this depends on WhatsApp message structure)
+					// For now, we'll rely on ExtendedTextMessage for reply detection
+				}
+			}
+
+			// Try to get media link from S3 data if available
+			if s3Data, ok := postmap["s3"].(map[string]interface{}); ok {
+				if url, ok := s3Data["url"].(string); ok {
+					mediaLink = url
+				}
+			}
+
+			// Only save if there's meaningful content (including delete messages)
+			if textContent != "" || mediaLink != "" || (messageType != "text" && messageType != "reaction") || messageType == "delete" {
+				// Serializar evt para JSON
+				evtJSON, err := json.Marshal(evt)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to marshal event to JSON")
+					evtJSON = []byte("{}")
+				}
+
+				err = mycli.s.saveMessageToHistory(
+					mycli.userID,
+					evt.Info.Chat.String(),
+					evt.Info.Sender.String(),
+					evt.Info.ID,
+					messageType,
+					textContent,
+					mediaLink,
+					replyToMessageID,
+					string(evtJSON),
+				)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to save message to history")
+				} else {
+					err = mycli.s.trimMessageHistory(mycli.userID, evt.Info.Chat.String(), historyLimit)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to trim message history")
+					}
+				}
+			} else {
+				log.Debug().Str("messageType", messageType).Str("messageID", evt.Info.ID).Msg("Skipping empty message from history")
+			}
 		}
 
 	case *events.Receipt:
@@ -1080,7 +1352,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postmap["type"] = "Logged Out"
 		dowebhook = 1
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
-		killchannel[mycli.userID] <- true
+		defer func() {
+			// Use a non-blocking send to prevent a deadlock if the receiver has already terminated.
+			select {
+			case killchannel[mycli.userID] <- true:
+			default:
+			}
+		}()
 		sqlStmt := `UPDATE users SET connected=0 WHERE id=$1`
 		_, err := mycli.db.Exec(sqlStmt, mycli.userID)
 		if err != nil {
@@ -1092,14 +1370,24 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dowebhook = 1
 		log.Info().Str("state", fmt.Sprintf("%s", evt.State)).Str("media", fmt.Sprintf("%s", evt.Media)).Str("chat", evt.MessageSource.Chat.String()).Str("sender", evt.MessageSource.Sender.String()).Msg("Chat Presence received")
 	case *events.CallOffer:
+		postmap["type"] = "CallOffer"
+		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call offer")
 	case *events.CallAccept:
+		postmap["type"] = "CallAccept"
+		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call accept")
 	case *events.CallTerminate:
+		postmap["type"] = "CallTerminate"
+		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call terminate")
 	case *events.CallOfferNotice:
+		postmap["type"] = "CallOfferNotice"
+		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call offer notice")
 	case *events.CallRelayLatency:
+		postmap["type"] = "CallRelayLatency"
+		dowebhook = 1
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call relay latency")
 	case *events.Disconnected:
 		postmap["type"] = "Disconnected"
@@ -1109,6 +1397,98 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postmap["type"] = "ConnectFailure"
 		dowebhook = 1
 		log.Error().Str("reason", fmt.Sprintf("%+v", evt)).Msg("Failed to connect to Whatsapp")
+	case *events.UndecryptableMessage:
+		postmap["type"] = "UndecryptableMessage"
+		dowebhook = 1
+		log.Warn().Str("info", evt.Info.SourceString()).Msg("Undecryptable message received")
+	case *events.MediaRetry:
+		postmap["type"] = "MediaRetry"
+		dowebhook = 1
+		log.Info().Str("messageID", evt.MessageID).Msg("Media retry event")
+	case *events.GroupInfo:
+		postmap["type"] = "GroupInfo"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("Group info updated")
+	case *events.JoinedGroup:
+		postmap["type"] = "JoinedGroup"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("Joined group")
+	case *events.Picture:
+		postmap["type"] = "Picture"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("Picture updated")
+	case *events.BlocklistChange:
+		postmap["type"] = "BlocklistChange"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("Blocklist changed")
+	case *events.Blocklist:
+		postmap["type"] = "Blocklist"
+		dowebhook = 1
+		log.Info().Msg("Blocklist received")
+	case *events.KeepAliveRestored:
+		postmap["type"] = "KeepAliveRestored"
+		dowebhook = 1
+		log.Info().Msg("Keep alive restored")
+	case *events.KeepAliveTimeout:
+		postmap["type"] = "KeepAliveTimeout"
+		dowebhook = 1
+		log.Warn().Msg("Keep alive timeout")
+	case *events.ClientOutdated:
+		postmap["type"] = "ClientOutdated"
+		dowebhook = 1
+		log.Warn().Msg("Client outdated")
+	case *events.TemporaryBan:
+		postmap["type"] = "TemporaryBan"
+		dowebhook = 1
+		log.Info().Msg("Temporary ban")
+	case *events.StreamError:
+		postmap["type"] = "StreamError"
+		dowebhook = 1
+		log.Error().Str("code", evt.Code).Msg("Stream error")
+	case *events.PairError:
+		postmap["type"] = "PairError"
+		dowebhook = 1
+		log.Error().Msg("Pair error")
+	case *events.PrivacySettings:
+		postmap["type"] = "PrivacySettings"
+		dowebhook = 1
+		log.Info().Msg("Privacy settings updated")
+	case *events.UserAbout:
+		postmap["type"] = "UserAbout"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("User about updated")
+	case *events.OfflineSyncCompleted:
+		postmap["type"] = "OfflineSyncCompleted"
+		dowebhook = 1
+		log.Info().Msg("Offline sync completed")
+	case *events.OfflineSyncPreview:
+		postmap["type"] = "OfflineSyncPreview"
+		dowebhook = 1
+		log.Info().Msg("Offline sync preview")
+	case *events.IdentityChange:
+		postmap["type"] = "IdentityChange"
+		dowebhook = 1
+		log.Info().Str("jid", evt.JID.String()).Msg("Identity changed")
+	case *events.NewsletterJoin:
+		postmap["type"] = "NewsletterJoin"
+		dowebhook = 1
+		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter joined")
+	case *events.NewsletterLeave:
+		postmap["type"] = "NewsletterLeave"
+		dowebhook = 1
+		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter left")
+	case *events.NewsletterMuteChange:
+		postmap["type"] = "NewsletterMuteChange"
+		dowebhook = 1
+		log.Info().Str("jid", evt.ID.String()).Msg("Newsletter mute changed")
+	case *events.NewsletterLiveUpdate:
+		postmap["type"] = "NewsletterLiveUpdate"
+		dowebhook = 1
+		log.Info().Msg("Newsletter live update")
+	case *events.FBMessage:
+		postmap["type"] = "FBMessage"
+		dowebhook = 1
+		log.Info().Str("info", evt.Info.SourceString()).Msg("Facebook message received")
 	default:
 		log.Warn().Str("event", fmt.Sprintf("%+v", evt)).Msg("Unhandled event")
 	}
