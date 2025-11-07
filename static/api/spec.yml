@@ -145,6 +145,28 @@ paths:
                     retention_days: 30
                   history: 0
   /admin/users/{id}:
+    get:
+      tags:
+        - Admin
+      summary: List users
+      description: Retrieve a list of users from the database, displaying also connection status and other info.
+      security:
+        - AdminAuth: [ ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the user to request
+          schema:
+            type: string
+            example: 4e4942c7dee1deef99ab8fd9f7350de5
+      responses:
+        200:
+          description: A JSON array of user objects
+          content:
+            application/json:
+              schema:
+                example: { "code": 200, "data": [ { "connected": true, "events": "All", "expiration": 0, "id": "bec45bb93cbd24cbec32941ec3c93a12", "jid": "5491155551122:12@s.whatsapp.net", "loggedIn": true, "name": "Some User", "proxy_url": "", "qrcode": "", "token": "d030sl9aDL39sl3075zz", "webhook": "https://some.domain/webhook" } ], "success": true }
     delete:
       tags:
         - Admin
@@ -712,6 +734,46 @@ paths:
             application/json:
               schema:
                 example: { "code": 200, "data": { "5491122223333@s.whatsapp.net": { "BusinessName": "", "FirstName": "", "Found": true, "FullName": "", "PushName": "FOP2" }, "549113334444@s.whatsapp.net": { "BusinessName": "", "FirstName": "", "Found": true, "FullName": "", "PushName": "Asternic" } } }
+  /user/lid/{phone}:
+    get:
+      tags:
+        - User
+      summary: Get JID and LID for a WhatsApp number
+      description: |
+        Returns the **JID** (WhatsApp ID) and **LID** (Linked Device ID) associated with a given phone number.
+        <br>Use this endpoint to identify contacts within WhatsApp.
+      parameters:
+        - name: phone
+          in: path
+          required: true
+          description: Phone number in international format (without the + sign)
+          schema:
+            type: string
+            example: "5511999999999"
+      security:
+        - UserTokenAuth: []
+      responses:
+        200:
+          description: JID and LID successfully retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jid:
+                    type: string
+                    example: "5511999999999@s.whatsapp.net"
+                    description: WhatsApp JID
+                  lid:
+                    type: string
+                    example: "1234567890@lid"
+                    description: Linked Device ID
+        400:
+          description: Invalid phone number format
+        401:
+          description: Invalid or missing token
+        404:
+          description: User not found
   /chat/delete:
     post:
       tags:
@@ -1300,6 +1362,29 @@ paths:
             application/json:
               schema:
                 example: { "code": 500, "error": "failed to get message history", "success": false }
+  /status/set/text:
+    post:
+      tags:
+        - Status
+      summary: Set status message
+      description: Updates the current user's status text, which is shown in the "About" section in the user profile.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/definitions/StatusText'
+
+      responses:
+        200:
+          description: Response
+          content:
+            application/json:
+              schema:
+                example: {"code":200,"data":{"Details":"Set"},"success":true}
+
   /call/reject:
     post:
       tags:
@@ -1927,6 +2012,14 @@ definitions:
       Media: 
         type: string
         example: audio
+  StatusText:
+    type: object
+    required:
+      - body
+    properties:
+      body:
+        type: string
+        example: Hi
   UserPresence:
     type: object
     required:
@@ -2101,6 +2194,10 @@ definitions:
       Body:
         type: string
         example: How you doin
+      LinkPreview:
+        type: boolean
+        description: "Set to true to enable link preview generation (default is false)"
+        example: true
       Id:
         type: string
         example: "ABCDABCD1234"
@@ -2114,7 +2211,7 @@ definitions:
     type: object
     required: 
       - Phone
-      - Image 
+      - Image
     properties:
       Phone:
         type: string
@@ -2132,7 +2229,7 @@ definitions:
         $ref: "#/definitions/ContextInfo"
   MessageAudio:
     type: object
-    required: 
+    required:
       - Phone
       - Audio
     properties:
@@ -2145,6 +2242,22 @@ definitions:
       Id:
         type: string
         example: "ABCDABCD1234"
+      PTT:
+        type: boolean
+        example: true
+      MimeType:
+        type: string
+        example: "audio/ogg; codecs=opus"
+      Seconds:
+        type: integer
+        format: uint32
+        example: 15
+      Waveform:
+        type: array
+        items:
+          type: integer
+          format: byte
+        example: [0, 0, 0, 12, 20, 20, 22, 10, 5, 0, 0, 0]
       ContextInfo:
         $ref: "#/definitions/ContextInfo"
   MessageVideo:
@@ -2273,12 +2386,12 @@ definitions:
       Id:
         type: object
         example: ["AABBCC11223344","DDEEFF55667788"]
-      Chat:
+      ChatPhone:
         type: string
-        example: 5491155553934.0:1@s.whatsapp.net
-      Sender:
+        example: "5491155553934"
+      SenderPhone:
         type: string
-        example: 5491155553111.0:1@s.whatsapp.net
+        example: "5491155553111"
   RejectCall:
     type: object
     required:

@@ -116,6 +116,8 @@ func (s *server) routes() {
 	s.router.Handle("/chat/send/edit", c.Then(s.SendEditMessage())).Methods("POST")
 	s.router.Handle("/chat/history", c.Then(s.GetHistory())).Methods("GET")
 
+	s.router.Handle("/status/set/text", c.Then(s.SetStatusMessage())).Methods("POST")
+
 	s.router.Handle("/call/reject", c.Then(s.RejectCall())).Methods("POST")
 
 	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")
@@ -125,6 +127,7 @@ func (s *server) routes() {
 	s.router.Handle("/user/lid-to-jid", c.Then(s.LIDtoJID())).Methods("POST")
 	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
+	s.router.Handle("/user/lid/{jid}", c.Then(s.GetUserLID())).Methods("GET")
 
 	s.router.Handle("/chat/presence", c.Then(s.ChatPresence())).Methods("POST")
 	s.router.Handle("/chat/markread", c.Then(s.MarkRead())).Methods("POST")
