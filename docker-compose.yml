@@ -39,7 +39,7 @@ services:
         # ports:
         #   - "${DB_PORT:-5432}:5432" # Uncomment to access the database directly from your host machine.
         volumes:
-            - db_data:/var/lib/postgresql/data
+            - ./data/db:/var/lib/postgresql/data
         networks:
             - wuzapi-network
         healthcheck:
@@ -75,5 +75,4 @@ networks:
         driver: bridge
 
 volumes:
-    db_data:
     rabbitmq_data:
