@@ -5,7 +5,7 @@ wuzapi
 .tool-versions
 
 # Added by Claude Task Master
-data/*
+data
 # Logs
 logs
 *.log

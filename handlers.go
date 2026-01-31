@@ -4915,6 +4915,86 @@ func (s *server) ListUsers() http.HandlerFunc {
 	}
 }
 
+// Admin List users
+func (s *server) ListUsersByToken() http.HandlerFunc {
+	type usersStruct struct {
+		Id         string         `db:"id"`
+		Name       string         `db:"name"`
+		Token      string         `db:"token"`
+		Webhook    string         `db:"webhook"`
+		Jid        string         `db:"jid"`
+		Qrcode     string         `db:"qrcode"`
+		Connected  sql.NullBool   `db:"connected"`
+		Expiration sql.NullInt64  `db:"expiration"`
+		ProxyURL   sql.NullString `db:"proxy_url"`
+		Events     string         `db:"events"`
+		History    sql.NullInt64  `db:"history"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		userToken, hasToken := vars["token"]
+
+		var query string
+		var args []interface{}
+
+		if !hasToken {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("name is required"))
+			return
+		}
+		
+		// Fetch a single user
+		query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users WHERE token = $1"
+		args = append(args, userToken)
+	
+
+		rows, err := s.db.Queryx(query, args...)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("problem accessing DB"))
+			return
+		}
+		defer rows.Close()
+
+		// Create a slice to store the user data
+		users := []map[string]interface{}{}
+		// Iterate over the rows and populate the user data
+		for rows.Next() {
+			var user usersStruct
+			err := rows.StructScan(&user)
+			if err != nil {
+				log.Error().Str("error", fmt.Sprintf("%v", err)).Msg("admin DB error")
+				s.Respond(w, r, http.StatusInternalServerError, errors.New("problem accessing DB"))
+				return
+			}
+
+			//"connected":  user.Connected.Bool,
+			userMap := map[string]interface{}{
+				"id":         user.Id,
+				"name":       user.Name,
+				"token":      user.Token,
+				"webhook":    user.Webhook,
+				"jid":        user.Jid,
+			}
+		
+			users = append(users, userMap)
+		}
+		// Check for any error that occurred during iteration
+		if err := rows.Err(); err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("problem accessing DB"))
+			return
+		}
+
+		// Encode users slice into a JSON string
+		responseJson, err := json.Marshal(users)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		s.Respond(w, r, http.StatusOK, string(responseJson))
+
+	}
+}
+
 // Add user
 func (s *server) AddUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
