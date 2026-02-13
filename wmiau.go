@@ -836,6 +836,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		log.Info().Str("id", evt.Info.ID).Str("source", evt.Info.SourceString()).Str("parts", strings.Join(metaParts, ", ")).Msg("Message Received")
 
 		if !*skipMedia {
+<<<<<<< HEAD
 
 			extendTextMessage := evt.Message.GetExtendedTextMessage()
 
@@ -892,6 +893,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			// try to get Image if any
 			img := evt.Message.GetImageMessage()
 
+=======
+			// try to get Image if any
+			img := evt.Message.GetImageMessage()
+>>>>>>> upstream/main
 			if img != nil {
 				// Create a temporary directory in /tmp
 				tmpDirectory := filepath.Join("/tmp", "user_"+txtid)

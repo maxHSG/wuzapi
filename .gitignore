@@ -5,7 +5,10 @@ wuzapi
 .tool-versions
 
 # Added by Claude Task Master
+<<<<<<< HEAD
 data
+=======
+>>>>>>> upstream/main
 # Logs
 logs
 *.log

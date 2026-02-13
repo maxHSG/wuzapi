@@ -52,7 +52,10 @@ func (s *server) routes() {
 	adminRoutes := s.router.PathPrefix("/admin").Subrouter()
 	adminRoutes.Use(s.authadmin)
 	adminRoutes.Handle("/users", s.ListUsers()).Methods("GET")
+<<<<<<< HEAD
 	adminRoutes.Handle("/users/by-token/{token}", s.ListUsersByToken()).Methods("GET")
+=======
+>>>>>>> upstream/main
 	adminRoutes.Handle("/users/{id}", s.ListUsers()).Methods("GET")
 	adminRoutes.Handle("/users", s.AddUser()).Methods("POST")
 	adminRoutes.Handle("/users/{id}", s.EditUser()).Methods("PUT")
@@ -130,8 +133,11 @@ func (s *server) routes() {
 	s.router.Handle("/user/presence", c.Then(s.SendPresence())).Methods("POST")
 	s.router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
 	s.router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
+<<<<<<< HEAD
 	s.router.Handle("/user/jid-to-lid", c.Then(s.JIDToLID())).Methods("POST")
 	s.router.Handle("/user/lid-to-jid", c.Then(s.LIDtoJID())).Methods("POST")
+=======
+>>>>>>> upstream/main
 	s.router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
 	s.router.Handle("/user/lid/{jid}", c.Then(s.GetUserLID())).Methods("GET")
