@@ -1,8 +1,8 @@
 # WUZAPI
 
-<img src="static/favicon.ico" width="30"> WuzAPI is an implementation 
-of the [@tulir/whatsmeow](https://github.com/tulir/whatsmeow) library as a 
-simple RESTful API service with multiple device support and concurrent 
+<img src="static/favicon.ico" width="30"> WuzAPI is an implementation
+of the [@tulir/whatsmeow](https://github.com/tulir/whatsmeow) library as a
+simple RESTful API service with multiple device support and concurrent
 sessions.
 
 Whatsmeow does not use Puppeteer on headless Chrome, nor an Android emulator. It communicates directly with WhatsApp’s WebSocket servers, making it significantly faster and much less demanding on memory and CPU than those solutions. The drawback is that any changes to the WhatsApp protocol could break connections, requiring a library update.
@@ -14,13 +14,13 @@ Be very careful—do not use this to send SPAM or anything similar. Use at your 
 
 ## Available endpoints
 
-* **Session:** Connect, disconnect, and log out from WhatsApp. Retrieve connection status and QR codes for scanning.
-* **Messages:** Send text, image, audio, document, template, video, sticker, location, contact, and poll messages.
-* **Users:** Check if phone numbers have WhatsApp, get user information and avatars, and retrieve the full contact list.
-* **Chat:** Set presence (typing/paused, recording media), mark messages as read, download images from messages, send reactions.
-* **Groups:** Create, delete and list groups, get info, get invite links, set participants, change group photos and names.
-* **Webhooks:** Set and get webhooks that will be called whenever events or messages are received.
-* **HMAC Configuration:** Configure HMAC keys for webhook security and signature verification.
+-   **Session:** Connect, disconnect, and log out from WhatsApp. Retrieve connection status and QR codes for scanning.
+-   **Messages:** Send text, image, audio, document, template, video, sticker, location, contact, and poll messages.
+-   **Users:** Check if phone numbers have WhatsApp, get user information and avatars, and retrieve the full contact list.
+-   **Chat:** Set presence (typing/paused, recording media), mark messages as read, download images from messages, send reactions.
+-   **Groups:** Create, delete and list groups, get info, get invite links, set participants, change group photos and names.
+-   **Webhooks:** Set and get webhooks that will be called whenever events or messages are received.
+-   **HMAC Configuration:** Configure HMAC keys for webhook security and signature verification.
 
 ### Webhook HMAC Signing
 
@@ -29,26 +29,31 @@ When HMAC is configured, all webhooks include an `x-hmac-signature` header with 
 #### Signature Generation by Content-Type:
 
 **`application/json`**
-* Signed data: Raw JSON request body
-* Verification: Use the exact JSON received
+
+-   Signed data: Raw JSON request body
+-   Verification: Use the exact JSON received
 
 **`application/x-www-form-urlencoded`**
-* Signed data: URL-encoded form string (`key=value&key2=value2`)
-* Verification: Reconstruct the form string from received parameters
+
+-   Signed data: URL-encoded form string (`key=value&key2=value2`)
+-   Verification: Reconstruct the form string from received parameters
 
 **`multipart/form-data`** (file uploads)
-* Signed data: JSON representation of form fields (excluding files)
-* Verification: Create JSON from non-file form fields
 
-* Always verify signatures before processing webhooks
+-   Signed data: JSON representation of form fields (excluding files)
+-   Verification: Create JSON from non-file form fields
+
+-   Always verify signatures before processing webhooks
 
 ## Prerequisites
 
 **Required:**
-* Go (Go Programming Language)
+
+-   Go (Go Programming Language)
 
 **Optional:**
-* Docker (for containerization)
+
+-   Docker (for containerization)
 
 ## Updating dependencies
 
@@ -78,17 +83,17 @@ brew install asternic/wuzapi/wuzapi
 By default it will start a REST service in port 8080. These are the parameters
 you can use to alter behaviour
 
-* -admintoken  : sets authentication token for admin endpoints. If not specified it will be read from .env
-* -address  : sets the IP address to bind the server to (default 0.0.0.0)
-* -port  : sets the port number (default 8080)
-* -logtype : format for logs, either console (default) or json
-* -color : enable colored output for console logs
-* -osname : Connection OS Name in Whatsapp
-* -skipmedia : Skip downloading media from messages
-* -wadebug : enable whatsmeow debug, either INFO or DEBUG levels are suported
+-   -admintoken : sets authentication token for admin endpoints. If not specified it will be read from .env
+-   -address : sets the IP address to bind the server to (default 0.0.0.0)
+-   -port : sets the port number (default 8080)
+-   -logtype : format for logs, either console (default) or json
+-   -color : enable colored output for console logs
+-   -osname : Connection OS Name in Whatsapp
+-   -skipmedia : Skip downloading media from messages
+-   -wadebug : enable whatsmeow debug, either INFO or DEBUG levels are suported
 
-* -sslcertificate : SSL Certificate File
-* -sslprivatekey : SSL Private Key File
+-   -sslcertificate : SSL Certificate File
+-   -sslprivatekey : SSL Private Key File
 
 Example:
 
@@ -101,12 +106,12 @@ To have colored logs:
 For JSON logs:
 
 ```
-./wuzapi -logtype json 
+./wuzapi -logtype json
 ```
 
-With time zone: 
+With time zone:
 
-Set `TZ=America/New_York ./wuzapi ...` in your shell or in your .env file or Docker Compose environment: `TZ=America/New_York`.  
+Set `TZ=America/New_York ./wuzapi ...` in your shell or in your .env file or Docker Compose environment: `TZ=America/New_York`.
 
 ## Configuration
 
@@ -119,6 +124,7 @@ cp .env.sample .env
 ### Environment Variables
 
 #### Required Settings
+
 ```
 WUZAPI_ADMIN_TOKEN=your_admin_token_here
 ```
@@ -147,18 +153,22 @@ WEBHOOK_ERROR_QUEUE_NAME=wuzapi_dead_letter_webhooks
 ### Important Notes
 
 #### Auto-Generated Credentials
+
 If the following settings are not provided, they will be auto-generated:
-* `WUZAPI_ADMIN_TOKEN`: Random 32-character token
-* `WUZAPI_GLOBAL_ENCRYPTION_KEY`: Random 32-byte key for AES-256 encryption
+
+-   `WUZAPI_ADMIN_TOKEN`: Random 32-character token
+-   `WUZAPI_GLOBAL_ENCRYPTION_KEY`: Random 32-byte key for AES-256 encryption
 
 **Important**: Save auto-generated credentials to your `.env` file or you will lose access to encrypted data and admin functions on restart!
 
 #### Webhook Security
-* `WUZAPI_GLOBAL_HMAC_KEY`: Global HMAC key for webhook signing (minimum 32 characters)
+
+-   `WUZAPI_GLOBAL_HMAC_KEY`: Global HMAC key for webhook signing (minimum 32 characters)
 
 #### Database Configuration
 
 **For PostgreSQL:**
+
 ```
 DB_USER=wuzapi
 DB_PASSWORD=wuzapi
@@ -172,6 +182,7 @@ DB_SSLMODE=false
 No database configuration needed - SQLite is used by default if no PostgreSQL settings are provided.
 
 #### Optional Settings
+
 ```
 TZ=America/New_York
 WEBHOOK_FORMAT=json # or "form" for the default
@@ -181,6 +192,7 @@ WUZAPI_GLOBAL_WEBHOOK= # Global webhook URL for all instances
 ```
 
 ### RabbitMQ Integration
+
 WuzAPI supports sending WhatsApp events to a RabbitMQ queue for global event distribution. When enabled, all WhatsApp events will be published to the specified queue regardless of individual user webhook configurations.
 
 Set these environment variables to enable RabbitMQ integration:
@@ -192,19 +204,19 @@ RABBITMQ_QUEUE=whatsapp  # Optional (default: whatsapp_events)
 
 When enabled:
 
-* All WhatsApp events (messages, presence updates, etc.) will be published to the configured queue regardless of event subscritions for regular webhooks
-* Events will include the userId and instanceName
-* This works alongside webhook configurations - events will be sent to both RabbitMQ and any configured webhooks
-* The integration is global and affects all instances
+-   All WhatsApp events (messages, presence updates, etc.) will be published to the configured queue regardless of event subscritions for regular webhooks
+-   Events will include the userId and instanceName
+-   This works alongside webhook configurations - events will be sent to both RabbitMQ and any configured webhooks
+-   The integration is global and affects all instances
 
 ### Webhook Security with HMAC
 
 WuzAPI supports HMAC signatures for webhook verification:
 
-* **Per-instance HMAC**: Configure unique HMAC keys for each user instance
-* **Global HMAC**: Set a global HMAC key via `WUZAPI_GLOBAL_HMAC_KEY` environment variable
-* **Signature Header**: All signed webhooks include `x-hmac-signature` header
-* **Key Security**: HMAC keys are never exposed after configuration
+-   **Per-instance HMAC**: Configure unique HMAC keys for each user instance
+-   **Global HMAC**: Set a global HMAC key via `WUZAPI_GLOBAL_HMAC_KEY` environment variable
+-   **Signature Header**: All signed webhooks include `x-hmac-signature` header
+-   **Key Security**: HMAC keys are never exposed after configuration
 
 **Priority**: Instance HMAC > Global HMAC > No signature
 
@@ -212,34 +224,36 @@ Configure HMAC keys via the Dashboard or using the `/session/hmac/config` API en
 
 #### Key configuration options:
 
-* WUZAPI_ADMIN_TOKEN: Required - Authentication token for admin endpoints
-* TZ: Optional - Timezone for server operations (default: UTC)
-* PostgreSQL-specific options: Only required when using PostgreSQL backend
-* RabbitMQ options: Optional, only required if you want to publish events to RabbitMQ
+-   WUZAPI_ADMIN_TOKEN: Required - Authentication token for admin endpoints
+-   TZ: Optional - Timezone for server operations (default: UTC)
+-   PostgreSQL-specific options: Only required when using PostgreSQL backend
+-   RabbitMQ options: Optional, only required if you want to publish events to RabbitMQ
 
 ### Docker Configuration
 
 When using Docker Compose, `docker-compose.yml` automatically loads environment variables from a `.env` file when available. However, `docker-compose-swarm.yaml` uses `docker stack deploy`, which does not automatically load from `.env` files. Variables in the swarm file will only be substituted if they are exported in the shell environment where the deploy command is run. For managing secrets in Swarm, consider using Docker secrets.
 
 The Docker configuration will:
+
 1. First load variables from the `.env` file (if present and supported)
 2. Use default values as fallback if variables are not defined
 3. Override with any variables explicitly set in the `environment` section of the compose file
 
 **Key differences for Docker deployment:**
-- Set `DB_HOST=db` instead of `localhost` to connect to the PostgreSQL container
-- The `WUZAPI_PORT` variable controls the external port mapping in `docker-compose.yml`
-- In swarm mode, `WUZAPI_PORT` configures the Traefik load balancer port
+
+-   Set `DB_HOST=db` instead of `localhost` to connect to the PostgreSQL container
+-   The `WUZAPI_PORT` variable controls the external port mapping in `docker-compose.yml`
+-   In swarm mode, `WUZAPI_PORT` configures the Traefik load balancer port
 
 **Note:** The `.env` file is already included in `.gitignore` to avoid committing sensitive information to your repository.
 
 ## Usage
 
-To interact with the API, you must include the `Authorization` header in HTTP requests, containing the user's authentication token. You can have multiple users (different WhatsApp numbers) on the same server.  
+To interact with the API, you must include the `Authorization` header in HTTP requests, containing the user's authentication token. You can have multiple users (different WhatsApp numbers) on the same server.
 
-* A Swagger API reference at [/api](/api)
-* A sample web page to connect and scan QR codes at [/login](/login)
-* A fully featured Dashboard to create, manage and test instances at [/dashboard](dashboard)
+-   A Swagger API reference at [/api](/api)
+-   A sample web page to connect and scan QR codes at [/login](/login)
+-   A fully featured Dashboard to create, manage and test instances at [/dashboard](dashboard)
 
 ## ADMIN Actions
 
@@ -247,17 +261,17 @@ You can list, add and remove users using the admin endpoints. For that you must 
 
 Then you can use the /admin/users endpoint with the Authorization header containing the token to:
 
-- `GET /admin/users` - List all users
-- `POST /admin/users` - Create a new user
-- `DELETE /admin/users/{id}` - Remove a user
+-   `GET /admin/users` - List all users
+-   `POST /admin/users` - Create a new user
+-   `DELETE /admin/users/{id}` - Remove a user
 
 The JSON body for creating a new user must contain:
 
-- `name` [string] : User's name 
-- `token` [string] : Security token to authorize/authenticate this user
-- `webhook` [string] : URL to send events via POST (optional)
-- `events` [string] : Comma-separated list of events to receive (required) - Valid events are: "Message", "ReadReceipt", "Presence", "HistorySync", "ChatPresence", "All"
-- `expiration` [int] : Expiration timestamp (optional, not enforced by the system)
+-   `name` [string] : User's name
+-   `token` [string] : Security token to authorize/authenticate this user
+-   `webhook` [string] : URL to send events via POST (optional)
+-   `events` [string] : Comma-separated list of events to receive (required) - Valid events are: "Message", "ReadReceipt", "Presence", "HistorySync", "ChatPresence", "All"
+-   `expiration` [int] : Expiration timestamp (optional, not enforced by the system)
 
 ## User Creation with Optional Proxy and S3 Configuration
 
@@ -267,45 +281,45 @@ You can create a user with optional proxy and S3 storage configuration. All fiel
 
 ```json
 {
-  "name": "test_user",
-  "token": "user_token",
-  "proxyConfig": {
-    "enabled": true,
-    "proxyURL": "socks5://user:pass@host:port"
-  },
-  "s3Config": {
-    "enabled": true,
-    "endpoint": "https://s3.amazonaws.com",
-    "region": "us-east-1",
-    "bucket": "my-bucket",
-    "accessKey": "AKIAIOSFODNN7EXAMPLE",
-    "secretKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    "pathStyle": false,
-    "publicURL": "https://cdn.yoursite.com",
-    "mediaDelivery": "both",
-    "retentionDays": 30
-  }
+	"name": "test_user",
+	"token": "user_token",
+	"proxyConfig": {
+		"enabled": true,
+		"proxyURL": "socks5://user:pass@host:port"
+	},
+	"s3Config": {
+		"enabled": true,
+		"endpoint": "https://s3.amazonaws.com",
+		"region": "us-east-1",
+		"bucket": "my-bucket",
+		"accessKey": "AKIAIOSFODNN7EXAMPLE",
+		"secretKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"pathStyle": false,
+		"publicURL": "https://cdn.yoursite.com",
+		"mediaDelivery": "both",
+		"retentionDays": 30
+	}
 }
 ```
 
-- `proxyConfig` (object, optional):
-  - `enabled` (boolean): Enable proxy for this user.
-  - `proxyURL` (string): Proxy URL (e.g., `socks5://user:pass@host:port`).
-- `s3Config` (object, optional):
-  - `enabled` (boolean): Enable S3 storage for this user.
-  - `endpoint` (string): S3 endpoint URL.
-  - `region` (string): S3 region.
-  - `bucket` (string): S3 bucket name.
-  - `accessKey` (string): S3 access key.
-  - `secretKey` (string): S3 secret key.
-  - `pathStyle` (boolean): Use path style addressing.
-  - `publicURL` (string): Public URL for accessing files.
-  - `mediaDelivery` (string): Media delivery type (`base64`, `s3`, or `both`).
-  - `retentionDays` (integer): Number of days to retain files.
+-   `proxyConfig` (object, optional):
+    -   `enabled` (boolean): Enable proxy for this user.
+    -   `proxyURL` (string): Proxy URL (e.g., `socks5://user:pass@host:port`).
+-   `s3Config` (object, optional):
+    -   `enabled` (boolean): Enable S3 storage for this user.
+    -   `endpoint` (string): S3 endpoint URL.
+    -   `region` (string): S3 region.
+    -   `bucket` (string): S3 bucket name.
+    -   `accessKey` (string): S3 access key.
+    -   `secretKey` (string): S3 secret key.
+    -   `pathStyle` (boolean): Use path style addressing.
+    -   `publicURL` (string): Public URL for accessing files.
+    -   `mediaDelivery` (string): Media delivery type (`base64`, `s3`, or `both`).
+    -   `retentionDays` (integer): Number of days to retain files.
 
 If you omit `proxyConfig` or `s3Config`, the user will be created without proxy or S3 integration, maintaining full backward compatibility.
 
-## API reference 
+## API reference
 
 API calls should be made with content type json, and parameters sent into the
 request body, always passing the Token header for authenticating the request.
@@ -324,16 +338,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-<<<<<<< HEAD
-        <a href=https://github.com/cleitonme>
-            <img src=https://avatars.githubusercontent.com/u/12551230?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=cleitonme/>
-            <br />
-            <sub style="font-size:14px"><b>cleitonme</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-=======
->>>>>>> upstream/main
         <a href=https://github.com/guilhermejansen>
             <img src=https://avatars.githubusercontent.com/u/52773109?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Guilherme Jansen/>
             <br />
@@ -348,8 +352,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-<<<<<<< HEAD
-=======
         <a href=https://github.com/cleitonme>
             <img src=https://avatars.githubusercontent.com/u/12551230?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=cleitonme/>
             <br />
@@ -357,7 +359,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
->>>>>>> upstream/main
         <a href=https://github.com/WellingtonFonseca>
             <img src=https://avatars.githubusercontent.com/u/25608175?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Wellington Fonseca/>
             <br />
@@ -365,29 +366,14 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-<<<<<<< HEAD
-        <a href=https://github.com/maxHSG>
-            <img src=https://avatars.githubusercontent.com/u/30557290?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=maxHSG/>
-            <br />
-            <sub style="font-size:14px"><b>maxHSG</b></sub>
-        </a>
-    </td>
-</tr>
-<tr>
-    <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-=======
->>>>>>> upstream/main
         <a href=https://github.com/xenodium>
             <img src=https://avatars.githubusercontent.com/u/8107219?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=xenodium/>
             <br />
             <sub style="font-size:14px"><b>xenodium</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-=======
 </tr>
 <tr>
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/ramon-victor>
             <img src=https://avatars.githubusercontent.com/u/13617054?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=ramon-victor/>
@@ -423,11 +409,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>Vitor Silva Lima</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-</tr>
-<tr>
-=======
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/RuanAyram>
             <img src=https://avatars.githubusercontent.com/u/16547662?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Ruan Kaylo/>
@@ -435,11 +416,8 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>Ruan Kaylo</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-=======
 </tr>
 <tr>
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/pedroafonso18>
             <img src=https://avatars.githubusercontent.com/u/157052926?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Pedro Afonso/>
@@ -475,11 +453,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>João Victor Souza</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-</tr>
-<tr>
-=======
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/gusnips>
             <img src=https://avatars.githubusercontent.com/u/981265?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Gustavo Salomé />
@@ -487,11 +460,8 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>Gustavo Salomé </b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-=======
 </tr>
 <tr>
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/AntonKun>
             <img src=https://avatars.githubusercontent.com/u/59668952?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Anton Kozyk/>
@@ -527,11 +497,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>elohmeier</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-</tr>
-<tr>
-=======
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/fadlee>
             <img src=https://avatars.githubusercontent.com/u/334797?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Fadlul Alim/>
@@ -539,11 +504,8 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>Fadlul Alim</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-=======
 </tr>
 <tr>
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/joaokopernico>
             <img src=https://avatars.githubusercontent.com/u/111400483?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=joaokopernico/>
@@ -552,11 +514,7 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
-<<<<<<< HEAD
-        <a href=https://github.com/jobasfernandes>
-=======
         <a href=https://github.com/JobasFernandes>
->>>>>>> upstream/main
             <img src=https://avatars.githubusercontent.com/u/26033148?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Joseph Fernandes/>
             <br />
             <sub style="font-size:14px"><b>Joseph Fernandes</b></sub>
@@ -583,11 +541,6 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>Ryan Achdiadsyah</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-</tr>
-<tr>
-=======
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/ViFigueiredo>
             <img src=https://avatars.githubusercontent.com/u/67883343?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=ViFigueiredo/>
@@ -595,11 +548,8 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
             <sub style="font-size:14px"><b>ViFigueiredo</b></sub>
         </a>
     </td>
-<<<<<<< HEAD
-=======
 </tr>
 <tr>
->>>>>>> upstream/main
     <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
         <a href=https://github.com/cadao7>
             <img src=https://avatars.githubusercontent.com/u/306330?v=4 width="100;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Ricardo Maminhak/>
@@ -619,7 +569,7 @@ Check the [API Reference](https://github.com/asternic/wuzapi/blob/main/API.md)
 
 ## Clients
 
-- [wuzapi TypeScript / Node Client](https://github.com/gusnips/wuzapi-node)
+-   [wuzapi TypeScript / Node Client](https://github.com/gusnips/wuzapi-node)
 
 ## Star History
 

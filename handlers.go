@@ -2879,7 +2879,6 @@ func (s *server) CheckUser() http.HandlerFunc {
 	}
 }
 
-<<<<<<< HEAD
 // checks if users/jid-to-lid are on Whatsapp
 func (s *server) JIDToLID() http.HandlerFunc {
 
@@ -3058,8 +3057,6 @@ func (s *server) LIDtoJID() http.HandlerFunc {
 	}
 }
 
-=======
->>>>>>> upstream/main
 // Gets user information
 func (s *server) GetUser() http.HandlerFunc {
 
@@ -4918,7 +4915,6 @@ func (s *server) ListUsers() http.HandlerFunc {
 	}
 }
 
-<<<<<<< HEAD
 // Admin List users
 func (s *server) ListUsersByToken() http.HandlerFunc {
 	type usersStruct struct {
@@ -4999,8 +4995,6 @@ func (s *server) ListUsersByToken() http.HandlerFunc {
 	}
 }
 
-=======
->>>>>>> upstream/main
 // Add user
 func (s *server) AddUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
