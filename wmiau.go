@@ -24,6 +24,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -820,6 +821,46 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		log.Info().Msg("Received StreamReplaced event")
 		return
 	case *events.Message:
+
+		// Edits (and similar) may arrive only as secretEncryptedMessage; whatsmeow does not unwrap these
+		// automatically — same pattern as DecryptReaction / DecryptPollVote.
+		if evt.Message != nil && evt.Message.GetSecretEncryptedMessage() != nil {
+			rawOuter := evt.RawMessage
+			outerEnc := evt.Message.GetSecretEncryptedMessage()
+			dec, err := mycli.WAClient.DecryptSecretEncryptedMessage(context.Background(), evt)
+			if err != nil {
+				log.Warn().Err(err).Str("messageID", evt.Info.ID).Str("chat", evt.Info.Chat.String()).
+					Msg("DecryptSecretEncryptedMessage failed (edit/reaction secret payload)")
+			} else {
+				unwrapped := &events.Message{
+					Info:                 evt.Info,
+					RawMessage:           dec,
+					RetryCount:           evt.RetryCount,
+					SourceWebMsg:         evt.SourceWebMsg,
+					UnavailableRequestID: evt.UnavailableRequestID,
+					NewsletterMeta:       evt.NewsletterMeta,
+				}
+				unwrapped.UnwrapRaw()
+				evt.Message = unwrapped.Message
+				evt.IsEphemeral = unwrapped.IsEphemeral
+				evt.IsViewOnce = unwrapped.IsViewOnce
+				evt.IsViewOnceV2 = unwrapped.IsViewOnceV2
+				evt.IsViewOnceV2Extension = unwrapped.IsViewOnceV2Extension
+				evt.IsDocumentWithCaption = unwrapped.IsDocumentWithCaption
+				evt.IsLottieSticker = unwrapped.IsLottieSticker
+				evt.IsBotInvoke = unwrapped.IsBotInvoke
+				evt.IsEdit = unwrapped.IsEdit
+				if outerEnc.GetSecretEncType() == waE2E.SecretEncryptedMessage_MESSAGE_EDIT ||
+					outerEnc.GetSecretEncType() == waE2E.SecretEncryptedMessage_EVENT_EDIT {
+					evt.IsEdit = true
+				}
+				if rawOuter != nil {
+					evt.RawMessage = rawOuter
+				} else {
+					evt.RawMessage = dec
+				}
+			}
+		}
 
 		var s3Config struct {
 			Enabled       string `db:"s3_enabled"`
