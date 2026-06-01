@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +43,25 @@ type MyClient struct {
 	subscriptions  []string
 	db             *sqlx.DB
 	s              *server
+}
+
+// safeGo runs fn in a new goroutine with a defer recover so a panic inside
+// fire-and-forget side-effects (webhook delivery, MQ push) cannot crash
+// the whole process. Losing one delivery is preferable to taking wuzapi
+// down for every connected user.
+func safeGo(name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().
+					Str("goroutine", name).
+					Interface("panic", r).
+					Str("stack", string(debug.Stack())).
+					Msg("panic recovered in goroutine")
+			}
+		}()
+		fn()
+	}()
 }
 
 // ensureS3ClientForUser loads S3 config from DB and initializes client if not already present (lazy init for reconnect-after-restart)
@@ -92,17 +113,9 @@ func sendToUserWebHookWithHmac(webhookurl string, path string, jsonData []byte, 
 		log.Info().Str("url", webhookurl).Msg("Calling user webhook")
 
 		if path == "" {
-			go callHookWithHmac(webhookurl, data, userID, encryptedHmacKey)
+			safeGo("callHookWithHmac", func() { callHookWithHmac(webhookurl, data, userID, encryptedHmacKey) })
 		} else {
-			// Create a channel to capture the error from the goroutine
-			errChan := make(chan error, 1)
-			go func() {
-				err := callHookFileWithHmac(webhookurl, data, userID, path, encryptedHmacKey)
-				errChan <- err
-			}()
-
-			// Optionally handle the error from the channel (if needed)
-			if err := <-errChan; err != nil {
+			if err := callHookFileWithHmac(webhookurl, data, userID, path, encryptedHmacKey); err != nil {
 				log.Error().Err(err).Msg("Error calling hook file")
 			}
 		}
@@ -213,9 +226,9 @@ func sendEventWithWebHook(mycli *MyClient, postmap map[string]interface{}, path 
 	sendToUserWebHookWithHmac(webhookurl, path, jsonData, mycli.userID, mycli.token, encryptedHmacKey)
 
 	// Get global webhook if configured
-	go sendToGlobalWebHook(jsonData, mycli.token, mycli.userID)
+	safeGo("sendToGlobalWebHook", func() { sendToGlobalWebHook(jsonData, mycli.token, mycli.userID) })
 
-	go sendToGlobalRabbit(jsonData, mycli.token, mycli.userID)
+	safeGo("sendToGlobalRabbit", func() { sendToGlobalRabbit(jsonData, mycli.token, mycli.userID) })
 }
 
 func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userId string) bool {
@@ -904,6 +917,67 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		log.Info().Str("id", evt.Info.ID).Str("source", evt.Info.SourceString()).Str("parts", strings.Join(metaParts, ", ")).Msg("Message Received")
 
+		// If this is a poll vote, decrypt the E2E-encrypted payload so the
+		// webhook can expose which options were selected. Votes arrive as
+		// SHA-256 hashes of the option text; we match those back to the
+		// plaintext options remembered at send time (see SendPoll in
+		// handlers.go). If the session was restarted between send and vote
+		// we cannot resolve plaintext; hashes are still emitted so the
+		// consumer can perform matching itself if it has stored options.
+		if evt.Message.GetPollUpdateMessage() != nil {
+			pollMsgID := evt.Message.GetPollUpdateMessage().GetPollCreationMessageKey().GetID()
+
+			pollVote, perr := mycli.WAClient.DecryptPollVote(context.Background(), evt)
+			if perr != nil {
+				log.Warn().Err(perr).Str("pollMsgID", pollMsgID).Msg("DecryptPollVote failed")
+			}
+
+			if perr == nil && pollVote != nil {
+				hashes := pollVote.GetSelectedOptions()
+				hashB64 := make([]string, 0, len(hashes))
+				for _, h := range hashes {
+					hashB64 = append(hashB64, base64.StdEncoding.EncodeToString(h))
+				}
+
+				selected := make([]string, 0, len(hashes))
+				if stored := clientManager.GetPollOptions(mycli.userID, pollMsgID); len(stored) > 0 {
+					optionsByHash := make(map[string]string, len(stored))
+					for _, opt := range stored {
+						sum := sha256.Sum256([]byte(opt))
+						optionsByHash[string(sum[:])] = opt
+					}
+					for _, h := range hashes {
+						if opt, found := optionsByHash[string(h)]; found {
+							selected = append(selected, opt)
+						}
+					}
+				}
+
+				postmap["pollVote"] = map[string]interface{}{
+					"pollCreationMsgID": pollMsgID,
+					"selectedOptions":   selected,
+					"selectedHashesB64": hashB64,
+				}
+			}
+		}
+    
+    if encMessage := evt.Message.GetSecretEncryptedMessage(); encMessage != nil {
+        decrypted, derr := mycli.WAClient.DecryptSecretEncryptedMessage(context.Background(), evt)
+        if derr != nil {
+            log.Warn().
+                Err(derr).
+                Str("messageID", evt.Info.ID).
+                Str("secretEncType", encMessage.GetSecretEncType().String()).
+                Msg("DecryptSecretEncryptedMessage failed")
+        } else if decrypted != nil {
+            log.Info().
+                Str("messageID", evt.Info.ID).
+                Str("secretEncType", encMessage.GetSecretEncType().String()).
+                Msg("Decrypted secretEncryptedMessage; swapping evt.Message")
+                evt.Message = decrypted
+        }
+    }
+    
 		if !*skipMedia {
 
 			extendTextMessage := evt.Message.GetExtendedTextMessage()

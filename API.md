@@ -637,6 +637,66 @@ Response:
 
 ---
 
+## Block User
+
+Blocks a WhatsApp user and returns the updated blocklist.
+
+Endpoint: _/user/block_
+
+Method: **POST**
+
+```
+curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554445"}' http://localhost:8080/user/block
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "Details": "User blocked",
+    "JID": "5491155554445@s.whatsapp.net",
+    "Blocklist": [
+      "5491155554445@s.whatsapp.net"
+    ],
+    "DHash": "1234567890"
+  },
+  "success": true
+}
+```
+
+---
+
+## Unblock User
+
+Unblocks a WhatsApp user and returns the updated blocklist.
+
+Endpoint: _/user/unblock_
+
+Method: **POST**
+
+```
+curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":"5491155554445"}' http://localhost:8080/user/unblock
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "Details": "User unblocked",
+    "JID": "5491155554445@s.whatsapp.net",
+    "Blocklist": [],
+    "DHash": "1234567891"
+  },
+  "success": true
+}
+```
+
+---
+
 
 # Chat
 
@@ -1269,6 +1329,89 @@ Response:
   "code": 200,
   "data": {
     "Details": "Group photo removed successfully"
+  },
+  "success": true
+}
+```
+
+---
+
+## List pending join requests
+
+Lists participants who have requested to join the group. Requires join approval mode to be enabled on the group and the session to be a group admin.
+
+endpoint: _/group/requestparticipants_
+
+method: **GET**
+
+```
+curl -s -X GET -H 'Token: 1234ABCD' 'http://localhost:8080/group/requestparticipants?groupJID=120362023605733675@g.us'
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "JID": "70072425046185@lid",
+      "RequestedAt": "2026-05-27T00:34:40-03:00"
+    }
+  ],
+  "success": true
+}
+```
+
+---
+
+## Approve or reject join requests
+
+Approves or rejects participants who requested to join the group. Use the `JID` values returned by `/group/requestparticipants` in the `Phone` array.
+
+endpoint: _/group/updaterequestparticipants_
+
+method: **POST**
+
+`Action` must be `"approve"` or `"reject"`.
+
+```
+curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"GroupJID":"120362023605733675@g.us","Phone":["70072425046185@lid"],"Action":"approve"}' http://localhost:8080/group/updaterequestparticipants
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "Details": "Group request participants updated successfully"
+  },
+  "success": true
+}
+```
+
+---
+
+## Set group join approval mode
+
+Enables or disables the requirement that new members be approved by an admin before joining the group.
+
+endpoint: _/group/joinapprovalmode_
+
+method: **POST**
+
+```
+curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' -d '{"groupjid":"120362023605733675@g.us","mode":true}' http://localhost:8080/group/joinapprovalmode
+```
+
+Response:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "Details": "Group join approval mode updated successfully"
   },
   "success": true
 }

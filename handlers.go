@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -32,6 +34,7 @@ import (
 
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -124,7 +127,10 @@ func (s *server) GetHealth() http.HandlerFunc {
 func (s *server) authadmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
-		if token != *adminToken {
+		tokenHash := sha256.Sum256([]byte(token))
+		adminHash := sha256.Sum256([]byte(*adminToken))
+		// Constant-time compare to avoid timing-attack leak of admin token bytes.
+		if subtle.ConstantTimeCompare(tokenHash[:], adminHash[:]) != 1 {
 			s.Respond(w, r, http.StatusUnauthorized, errors.New("unauthorized"))
 			return
 		}
@@ -2755,6 +2761,10 @@ func (s *server) SendPoll() http.HandlerFunc {
 			return
 		}
 
+		// Remember the plaintext options so incoming vote webhooks can
+		// resolve the hashed selections back to readable strings.
+		clientManager.SetPollOptions(txtid, msgid, req.Options)
+
 		// Publish sent message event to RabbitMQ
 		token := r.Context().Value("userinfo").(Values).Get("Token")
 		userID := r.Context().Value("userinfo").(Values).Get("Id")
@@ -3670,6 +3680,144 @@ func (s *server) GetContacts() http.HandlerFunc {
 
 		return
 	}
+}
+
+func (s *server) updateUserBlocklist(action events.BlocklistChangeAction) http.HandlerFunc {
+	type blocklistRequest struct {
+		Phone string `json:"Phone"`
+		JID   string `json:"JID"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		client := clientManager.GetWhatsmeowClient(txtid)
+		if client == nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		var t blocklistRequest
+		if err := decoder.Decode(&t); err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
+			return
+		}
+
+		target := t.JID
+		if target == "" {
+			target = t.Phone
+		}
+		target = strings.TrimSpace(target)
+		if target == "" {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Phone or JID in Payload"))
+			return
+		}
+
+		jid, ok := parseJID(target)
+		if !ok {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not parse Phone or JID"))
+			return
+		}
+		jid = normalizeBlocklistJID(jid)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		blocklistJID, blocklist, err := updateBlocklistWithResolvedJID(ctx, client, jid, action)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("failed to update blocklist: %s", err)))
+			return
+		}
+
+		blockedJIDs := make([]string, 0)
+		if blocklist != nil {
+			blockedJIDs = make([]string, 0, len(blocklist.JIDs))
+			for _, blockedJID := range blocklist.JIDs {
+				blockedJIDs = append(blockedJIDs, blockedJID.String())
+			}
+		}
+
+		details := "User blocked"
+		if action == events.BlocklistChangeActionUnblock {
+			details = "User unblocked"
+		}
+
+		response := map[string]interface{}{
+			"Details":   details,
+			"JID":       blocklistJID.String(),
+			"Blocklist": blockedJIDs,
+			"DHash":     "",
+		}
+		if blocklistJID != jid {
+			response["RequestedJID"] = jid.String()
+		}
+		if blocklist != nil {
+			response["DHash"] = blocklist.DHash
+		}
+
+		responseJson, err := json.Marshal(response)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+		} else {
+			s.Respond(w, r, http.StatusOK, string(responseJson))
+		}
+	}
+}
+
+func normalizeBlocklistJID(jid types.JID) types.JID {
+	jid = jid.ToNonAD()
+	if jid.Server == types.LegacyUserServer {
+		jid.Server = types.DefaultUserServer
+	}
+	return jid
+}
+
+func updateBlocklistWithResolvedJID(ctx context.Context, client *whatsmeow.Client, jid types.JID, action events.BlocklistChangeAction) (types.JID, *types.Blocklist, error) {
+	blocklistJID, err := resolveBlocklistPNJID(ctx, client, jid)
+	if err != nil {
+		return jid, nil, err
+	}
+
+	blocklist, err := client.UpdateBlocklist(ctx, blocklistJID, action)
+	return blocklistJID, blocklist, err
+}
+
+func resolveBlocklistPNJID(ctx context.Context, client *whatsmeow.Client, jid types.JID) (types.JID, error) {
+	jid = normalizeBlocklistJID(jid)
+	switch jid.Server {
+	case types.DefaultUserServer:
+		return jid, nil
+	case types.HiddenUserServer:
+		pn, err := getCachedPNForLID(ctx, client, jid)
+		if err != nil {
+			return types.JID{}, err
+		}
+		return normalizeBlocklistJID(pn), nil
+	default:
+		return types.JID{}, fmt.Errorf("unsupported blocklist JID server %q", jid.Server)
+	}
+}
+
+func getCachedPNForLID(ctx context.Context, client *whatsmeow.Client, jid types.JID) (types.JID, error) {
+	if client.Store == nil || client.Store.LIDs == nil {
+		return types.JID{}, errors.New("LID-to-PN mapping store is not available")
+	}
+	pn, err := client.Store.LIDs.GetPNForLID(ctx, jid)
+	if err != nil {
+		return types.JID{}, fmt.Errorf("could not resolve phone-number JID for LID %s: %w", jid, err)
+	}
+	if pn.IsEmpty() {
+		return types.JID{}, fmt.Errorf("could not resolve phone-number JID for LID %s", jid)
+	}
+	return pn, nil
+}
+
+func (s *server) BlockUser() http.HandlerFunc {
+	return s.updateUserBlocklist(events.BlocklistChangeActionBlock)
+}
+
+func (s *server) UnblockUser() http.HandlerFunc {
+	return s.updateUserBlocklist(events.BlocklistChangeActionUnblock)
 }
 
 // Sets Chat Presence (typing/paused/recording audio)
