@@ -3,6 +3,15 @@ let scanned = false;
 let updateAdminTimeout = null;
 let updateUserTimeout = null;
 let updateInterval = 5000;
+let passkeyInProgress = false;
+let passkeyRequestHandled = false;
+let passkeyConfirmationHandled = false;
+
+function resetPasskeyState() {
+  passkeyInProgress = false;
+  passkeyRequestHandled = false;
+  passkeyConfirmationHandled = false;
+}
 let instanceToDelete = null;
 let isAdminLogin = false;
 let currentInstanceData = null;
@@ -195,6 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Success case
                 if (data.success && data.data && data.data.LinkingCode) {
                   document.getElementById('pairInfo').innerHTML = `Your link code is: ${data.data.LinkingCode}`;
+                  resetPasskeyState();
                   scanInterval = setInterval(checkStatus, 1000);
                 } else {
                   document.getElementById('pairInfo').innerHTML = "Problem getting pairing code";
@@ -641,6 +651,9 @@ function updateUser() {
         window.currentUserJID = result.data.jid;
       }
       populateInstances([result.data]);
+      if (!result.data.loggedIn && result.data.connected) {
+        processPasskeyState();
+      }
     } 
   });
   clearTimeout(updateUserTimeout)
@@ -910,6 +923,7 @@ function hideWidgets() {
 
 async function connect(token='') {
   console.log("Connecting...");
+  resetPasskeyState();
   if(token=='') {
      token = getLocalStorageItem('token');
   }
@@ -1092,6 +1106,109 @@ async function getQr() {
   });
   data = await res.json();
   return data;
+}
+
+async function getPasskey() {
+  const myHeaders = new Headers();
+  const token = getLocalStorageItem('token');
+  myHeaders.append('token', token);
+  res = await fetch(baseUrl + "/session/passkey", {
+    method: "GET",
+    headers: myHeaders,
+  });
+  data = await res.json();
+  return data;
+}
+
+async function sendPasskeyResponse(response) {
+  const myHeaders = new Headers();
+  const token = getLocalStorageItem('token');
+  myHeaders.append('token', token);
+  myHeaders.append('Content-Type', 'application/json');
+  res = await fetch(baseUrl + "/session/passkey/response", {
+    method: "POST",
+    headers: myHeaders,
+    body: JSON.stringify(response),
+  });
+  data = await res.json();
+  return data;
+}
+
+async function sendPasskeyConfirm() {
+  const myHeaders = new Headers();
+  const token = getLocalStorageItem('token');
+  myHeaders.append('token', token);
+  myHeaders.append('Content-Type', 'application/json');
+  res = await fetch(baseUrl + "/session/passkey/confirm", {
+    method: "POST",
+    headers: myHeaders,
+  });
+  data = await res.json();
+  return data;
+}
+
+async function processPasskeyState() {
+  if (passkeyInProgress) return;
+
+  const data = await getPasskey();
+  if (!data.success || !data.data) return;
+
+  const state = data.data;
+  if (state.status === 'request' && !passkeyRequestHandled) {
+    passkeyInProgress = true;
+    passkeyRequestHandled = true;
+    try {
+      if (!window.PublicKeyCredential || !PublicKeyCredential.parseRequestOptionsFromJSON) {
+        showError("Passkey required but WebAuthn is not supported in this browser");
+        return;
+      }
+
+      $.toast({ class: 'warning', message: 'Passkey verification required. Complete the security prompt.' });
+      const options = PublicKeyCredential.parseRequestOptionsFromJSON(state.publicKey);
+      const credential = await navigator.credentials.get({ publicKey: options });
+      const response = credential.toJSON();
+      const result = await sendPasskeyResponse(response);
+      if (result.success !== true) {
+        showError("Passkey verification failed: " + (result.error || "unknown error"));
+        passkeyRequestHandled = false;
+      }
+    } catch (e) {
+      console.error('Passkey error:', e);
+      showError("Passkey verification failed: " + e.message);
+      passkeyRequestHandled = false;
+    } finally {
+      passkeyInProgress = false;
+    }
+  } else if (state.status === 'confirmation' && !passkeyConfirmationHandled) {
+    passkeyConfirmationHandled = true;
+    document.getElementById('passkeyConfirmCode').innerHTML = state.code;
+    document.getElementById('passkeyConfirmError').classList.add('hidden');
+    $('#modalPasskeyConfirm').modal({
+      closable: false,
+      onApprove: async function() {
+        const result = await sendPasskeyConfirm();
+        if (result.success !== true) {
+          document.getElementById('passkeyConfirmError').innerHTML = result.error || 'Confirmation failed';
+          document.getElementById('passkeyConfirmError').classList.remove('hidden');
+          passkeyConfirmationHandled = false;
+          return false;
+        }
+        return true;
+      }
+    }).modal('show');
+  } else if (state.status === 'error') {
+    showError("Passkey error: " + (state.error || "unknown"));
+  }
+}
+
+function checkStatus() {
+  processPasskeyState();
+  statusRequest().then((status) => {
+    if(status.success==true && status.data.loggedIn === true) {
+      clearInterval(scanInterval);
+      updateUser();
+    }
+  });
 }
 
 async function statusRequest() {

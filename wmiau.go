@@ -550,6 +550,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
 					// Send webhook notifying QR timeout before cleanup
+					clientManager.ClearPasskeyState(userID)
 					postmap := make(map[string]interface{})
 					postmap["event"] = evt.Event
 					postmap["type"] = "QRTimeout"
@@ -573,8 +574,49 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					case killchannel[userID] <- true:
 					default:
 					}
+				} else if evt.Event == whatsmeow.QRChannelEventPasskeyRequest {
+					log.Info().Msg("Passkey request received during pairing")
+					clientManager.SetPasskeyRequest(userID, evt.PasskeyRequest.PublicKey)
+
+					publicKeyJSON, err := json.Marshal(evt.PasskeyRequest.PublicKey)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to marshal passkey public key")
+					}
+
+					postmap := make(map[string]interface{})
+					postmap["event"] = evt.Event
+					postmap["type"] = "PasskeyRequest"
+					if err == nil {
+						postmap["publicKey"] = json.RawMessage(publicKeyJSON)
+					}
+					sendEventWithWebHook(&mycli, postmap, "")
+
+				} else if evt.Event == whatsmeow.QRChannelEventPasskeyResponse {
+					log.Info().Str("code", evt.PasskeyConfirmation.Code).Bool("skipHandoffUX", evt.PasskeyConfirmation.SkipHandoffUX).Msg("Passkey confirmation required")
+					clientManager.SetPasskeyConfirmation(userID, evt.PasskeyConfirmation.Code, evt.PasskeyConfirmation.SkipHandoffUX)
+
+					postmap := make(map[string]interface{})
+					postmap["event"] = evt.Event
+					postmap["type"] = "PasskeyConfirmation"
+					postmap["code"] = evt.PasskeyConfirmation.Code
+					postmap["skipHandoffUX"] = evt.PasskeyConfirmation.SkipHandoffUX
+					sendEventWithWebHook(&mycli, postmap, "")
+
+				} else if evt.Event == whatsmeow.QRChannelEventError {
+					log.Error().Err(evt.Error).Msg("Pairing error during QR/passkey flow")
+					clientManager.SetPasskeyError(userID, evt.Error)
+
+					postmap := make(map[string]interface{})
+					postmap["event"] = evt.Event
+					postmap["type"] = "PasskeyError"
+					if evt.Error != nil {
+						postmap["error"] = evt.Error.Error()
+					}
+					sendEventWithWebHook(&mycli, postmap, "")
+
 				} else if evt.Event == "success" {
 					log.Info().Msg("QR pairing ok!")
+					clientManager.ClearPasskeyState(userID)
 					// Clear QR code after pairing
 					sqlStmt := `UPDATE users SET qrcode='', connected=1 WHERE id=$1`
 					_, err := s.db.Exec(sqlStmt, userID)

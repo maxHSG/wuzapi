@@ -30,6 +30,9 @@ var supportedEventTypes = []string{
 	"StreamReplaced",
 	"PairSuccess",
 	"PairError",
+	"PasskeyRequest",
+	"PasskeyConfirmation",
+	"PasskeyError",
 	"QR",
 	"QRScannedWithoutMultidevice",
 

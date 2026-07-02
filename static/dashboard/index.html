@@ -313,6 +313,18 @@
     </div>
   </div>
 
+  <div class="ui modal" id="modalPasskeyConfirm">
+    <div class="header">Verify Passkey Code</div>
+    <div class="content">
+      <p>Confirm that your phone shows the same code:</p>
+      <div class="ui huge header center aligned" id="passkeyConfirmCode"></div>
+      <div class="ui negative message hidden" id="passkeyConfirmError"></div>
+    </div>
+    <div class="actions">
+      <div class="ui positive right labeled icon button">Code matches<i class="checkmark icon"></i></div>
+    </div>
+  </div>
+
   <!-- Webhook Modals -->
 
   <div class="ui modal" id="modalSetWebhook"><i class="close icon"></i>
@@ -348,6 +360,9 @@
             <option value="StreamReplaced">Stream Replaced</option>
             <option value="PairSuccess">Pair Success</option>
             <option value="PairError">Pair Error</option>
+            <option value="PasskeyRequest">Passkey Request</option>
+            <option value="PasskeyConfirmation">Passkey Confirmation</option>
+            <option value="PasskeyError">Passkey Error</option>
             <option value="QR">QR</option>
             <option value="QRScannedWithoutMultidevice">QR Scanned Without Multidevice</option>
             <!-- Privacy and Settings -->
@@ -610,6 +625,9 @@
             <option value="StreamReplaced">Stream Replaced</option>
             <option value="PairSuccess">Pair Success</option>
             <option value="PairError">Pair Error</option>
+            <option value="PasskeyRequest">Passkey Request</option>
+            <option value="PasskeyConfirmation">Passkey Confirmation</option>
+            <option value="PasskeyError">Passkey Error</option>
             <option value="QR">QR</option>
             <option value="QRScannedWithoutMultidevice">QR Scanned Without Multidevice</option>
             <!-- Privacy and Settings -->

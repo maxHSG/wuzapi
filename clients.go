@@ -5,7 +5,23 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 )
+
+const (
+	PasskeyStatusNone         = ""
+	PasskeyStatusRequest      = "request"
+	PasskeyStatusConfirmation = "confirmation"
+	PasskeyStatusError        = "error"
+)
+
+type PasskeyState struct {
+	Status           string
+	Request          *types.WebAuthnPublicKey
+	ConfirmationCode string
+	SkipHandoffUX    bool
+	Error            string
+}
 
 type ClientManager struct {
 	sync.RWMutex
@@ -18,7 +34,8 @@ type ClientManager struct {
 	// before emitting the webhook payload. Entries are best-effort and
 	// in-memory only — if wuzapi restarts between send and vote, plaintext
 	// resolution is skipped and the webhook falls back to hashes only.
-	pollOptions map[string]map[string][]string
+	pollOptions   map[string]map[string][]string
+	passkeyStates map[string]*PasskeyState
 }
 
 func NewClientManager() *ClientManager {
@@ -27,6 +44,7 @@ func NewClientManager() *ClientManager {
 		httpClients:      make(map[string]*resty.Client),
 		myClients:        make(map[string]*MyClient),
 		pollOptions:      make(map[string]map[string][]string),
+		passkeyStates:    make(map[string]*PasskeyState),
 	}
 }
 
@@ -46,6 +64,7 @@ func (cm *ClientManager) DeleteWhatsmeowClient(userID string) {
 	cm.Lock()
 	defer cm.Unlock()
 	delete(cm.whatsmeowClients, userID)
+	delete(cm.passkeyStates, userID)
 }
 
 func (cm *ClientManager) SetHTTPClient(userID string, client *resty.Client) {
@@ -87,6 +106,60 @@ func (cm *ClientManager) DeleteMyClient(userID string) {
 	defer cm.Unlock()
 	delete(cm.myClients, userID)
 	delete(cm.pollOptions, userID)
+	delete(cm.passkeyStates, userID)
+}
+
+func (cm *ClientManager) SetPasskeyRequest(userID string, pubKey *types.WebAuthnPublicKey) {
+	cm.Lock()
+	defer cm.Unlock()
+	cm.passkeyStates[userID] = &PasskeyState{
+		Status:  PasskeyStatusRequest,
+		Request: pubKey,
+	}
+}
+
+func (cm *ClientManager) SetPasskeyConfirmation(userID, code string, skipHandoffUX bool) {
+	cm.Lock()
+	defer cm.Unlock()
+	cm.passkeyStates[userID] = &PasskeyState{
+		Status:           PasskeyStatusConfirmation,
+		ConfirmationCode: code,
+		SkipHandoffUX:    skipHandoffUX,
+	}
+}
+
+func (cm *ClientManager) SetPasskeyError(userID string, err error) {
+	cm.Lock()
+	defer cm.Unlock()
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	cm.passkeyStates[userID] = &PasskeyState{
+		Status: PasskeyStatusError,
+		Error:  errMsg,
+	}
+}
+
+func (cm *ClientManager) GetPasskeyState(userID string) *PasskeyState {
+	cm.RLock()
+	defer cm.RUnlock()
+	state := cm.passkeyStates[userID]
+	if state == nil {
+		return &PasskeyState{}
+	}
+	copy := *state
+	if state.Request != nil {
+		reqCopy := *state.Request
+		copy.Request = &reqCopy
+	}
+	return &copy
+}
+
+func (cm *ClientManager) ClearPasskeyState(userID string) {
+	cm.Lock()
+	defer cm.Unlock()
+	delete(cm.passkeyStates, userID)
 }
 
 // UpdateMyClientSubscriptions updates the event subscriptions of a client without reconnecting

@@ -248,6 +248,15 @@ func (ss *stdioServer) routeRequest(req *jsonRpcRequest) {
 	case "session.qr":
 		httpMethod = "GET"
 		httpPath = "/session/qr"
+	case "session.passkey":
+		httpMethod = "GET"
+		httpPath = "/session/passkey"
+	case "session.passkey.response":
+		httpMethod = "POST"
+		httpPath = "/session/passkey/response"
+	case "session.passkey.confirm":
+		httpMethod = "POST"
+		httpPath = "/session/passkey/confirm"
 	case "session.status":
 		httpMethod = "GET"
 		httpPath = "/session/status"

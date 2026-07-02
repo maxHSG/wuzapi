@@ -84,6 +84,9 @@ func (s *server) routes() {
 	s.router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
 	s.router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")
 	s.router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
+	s.router.Handle("/session/passkey", c.Then(s.GetPasskey())).Methods("GET")
+	s.router.Handle("/session/passkey/response", c.Then(s.SendPasskeyResponse())).Methods("POST")
+	s.router.Handle("/session/passkey/confirm", c.Then(s.SendPasskeyConfirmation())).Methods("POST")
 	s.router.Handle("/session/pairphone", c.Then(s.PairPhone())).Methods("POST")
 	s.router.Handle("/session/history", c.Then(s.RequestHistorySync())).Methods("GET")
 
