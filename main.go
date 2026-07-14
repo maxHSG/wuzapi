@@ -197,6 +197,11 @@ func main() {
 		}
 	}
 
+	if v := os.Getenv("WUZAPI_SKIP_MEDIA"); v != "" {
+		*skipMedia = strings.ToLower(v) == "true" || v == "1"
+		log.Info().Bool("skipmedia", *skipMedia).Msg("Skip media configured from environment variable")
+	}
+
 	if v := os.Getenv("WEBHOOK_RETRY_ENABLED"); v != "" {
 		*webhookRetryEnabled = strings.ToLower(v) == "true" || v == "1"
 	}

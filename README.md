@@ -89,7 +89,7 @@ you can use to alter behaviour
 -   -logtype : format for logs, either console (default) or json
 -   -color : enable colored output for console logs
 -   -osname : Connection OS Name in Whatsapp
--   -skipmedia : Skip downloading media from messages
+-   -skipmedia : Skip downloading media from messages (also available via `WUZAPI_SKIP_MEDIA=true`)
 -   -wadebug : enable whatsmeow debug, either INFO or DEBUG levels are suported
 
 -   -sslcertificate : SSL Certificate File
@@ -189,6 +189,7 @@ WEBHOOK_FORMAT=json # or "form" for the default
 SESSION_DEVICE_NAME=WuzAPI
 WUZAPI_PORT=8080 # Port for the WuzAPI server
 WUZAPI_GLOBAL_WEBHOOK= # Global webhook URL for all instances
+WUZAPI_SKIP_MEDIA=false # true/1 to skip downloading media from received messages
 ```
 
 ### RabbitMQ Integration

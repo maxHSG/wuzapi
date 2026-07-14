@@ -15,6 +15,7 @@ services:
       - DB_PORT=${DB_PORT:-5432}
       - TZ=${TZ:-America/Sao_Paulo}
       - WEBHOOK_FORMAT=${WEBHOOK_FORMAT:-json}
+      - WUZAPI_SKIP_MEDIA=${WUZAPI_SKIP_MEDIA:-false}
       - SESSION_DEVICE_NAME=${SESSION_DEVICE_NAME:-WuzAPI}
       # RabbitMQ configuration Optional
       - RABBITMQ_URL=amqp://wuzapi:wuzapi@rabbitmq:5672/
