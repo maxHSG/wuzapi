@@ -7026,15 +7026,17 @@ func (s *server) DeleteHmacConfig() http.HandlerFunc {
 func (s *server) RejectCall() http.HandlerFunc {
 
 	type rejectCallStruct struct {
-		CallFrom string `json:"call_from"`
-		CallID   string `json:"call_id"`
+		CallFrom    string `json:"call_from"`
+		CallCreator string `json:"call_creator"`
+		CallID      string `json:"call_id"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		client := clientManager.GetWhatsmeowClient(txtid)
+		if client == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
@@ -7057,19 +7059,34 @@ func (s *server) RejectCall() http.HandlerFunc {
 			return
 		}
 
-		callFrom, ok := parseJID(t.CallFrom)
+		callTo, ok := parseJID(t.CallFrom)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not parse call_from"))
 			return
 		}
 
-		err = clientManager.GetWhatsmeowClient(txtid).RejectCall(context.Background(), callFrom, t.CallID)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error rejecting call: %v", err)))
+		var rejectErr error
+		if t.CallCreator != "" {
+			callCreator, ok := parseJID(t.CallCreator)
+			if !ok {
+				s.Respond(w, r, http.StatusBadRequest, errors.New("could not parse call_creator"))
+				return
+			}
+			rejectErr = rejectIncomingCall(r.Context(), client, callTo, callCreator, t.CallID)
+		} else {
+			rejectErr = client.RejectCall(r.Context(), callTo, t.CallID)
+		}
+
+		if rejectErr != nil {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error rejecting call: %v", rejectErr)))
 			return
 		}
 
-		log.Info().Str("call_id", t.CallID).Str("call_from", t.CallFrom).Msg("Call rejected")
+		log.Info().
+			Str("call_id", t.CallID).
+			Str("call_from", t.CallFrom).
+			Str("call_creator", t.CallCreator).
+			Msg("Call rejected")
 		response := map[string]interface{}{"Details": "Call rejected", "CallID": t.CallID}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
@@ -7079,6 +7096,30 @@ func (s *server) RejectCall() http.HandlerFunc {
 		}
 		return
 	}
+}
+
+// rejectIncomingCall envia o stanza correto: `to` = From, `call-creator` = CallCreator.
+// whatsmeow.RejectCall usa o mesmo JID nos dois campos e falha em ligações LID.
+func rejectIncomingCall(ctx context.Context, client *whatsmeow.Client, callTo types.JID, callCreator types.JID, callID string) error {
+	if client.Store == nil || client.Store.ID == nil {
+		return whatsmeow.ErrNotLoggedIn
+	}
+
+	ownID := client.Store.ID.ToNonAD()
+	callTo = callTo.ToNonAD()
+	callCreator = callCreator.ToNonAD()
+
+	rejectNode := waBinary.Node{
+		Tag:     "reject",
+		Attrs:   waBinary.Attrs{"call-id": callID, "call-creator": callCreator, "count": "0"},
+		Content: nil,
+	}
+
+	return client.DangerousInternals().SendNode(ctx, waBinary.Node{
+		Tag:     "call",
+		Attrs:   waBinary.Attrs{"id": client.GenerateMessageID(), "from": ownID, "to": callTo},
+		Content: []waBinary.Node{rejectNode},
+	})
 }
 
 // GetUserLID retrieves the Local ID (LID) for a given JID/Phone Number
