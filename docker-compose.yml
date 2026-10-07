@@ -20,7 +20,7 @@ services:
             - WUZAPI_SKIP_MEDIA=${WUZAPI_SKIP_MEDIA:-false}
             - SESSION_DEVICE_NAME=${SESSION_DEVICE_NAME:-WuzAPI}
             # RabbitMQ configuration Optional
-            - RABBITMQ_URL=amqp://wuzapi:wuzapi@rabbitmq:5672/
+            - RABBITMQ_URL=amqp://${RABBITMQ_USER:-wuzapi}:${RABBITMQ_PASSWORD:-wuzapi}@rabbitmq:5672/
             - RABBITMQ_QUEUE=whatsapp_events
         depends_on:
             db:
@@ -54,8 +54,8 @@ services:
         image: rabbitmq:3-management
         hostname: rabbitmq
         environment:
-            RABBITMQ_DEFAULT_USER: wuzapi
-            RABBITMQ_DEFAULT_PASS: wuzapi
+            RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-wuzapi}
+            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-wuzapi}
             RABBITMQ_DEFAULT_VHOST: /
         ports:
             - "5672:5672" # AMQP port
