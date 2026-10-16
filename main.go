@@ -367,6 +367,7 @@ func main() {
 		log.Info().Msg("Global HMAC key encrypted successfully")
 	}
 
+	// Blocks when RABBITMQ_URL is set until AMQP is available (safe on machine reboot).
 	InitRabbitMQ()
 
 	ex, err := os.Executable()

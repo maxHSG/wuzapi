@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -14,22 +13,59 @@ var (
 	rabbitConn    *amqp091.Connection
 	rabbitChannel *amqp091.Channel
 	rabbitEnabled bool
-	rabbitOnce    sync.Once
 	rabbitQueue   string
 )
 
-const (
-	maxRetries    = 10
-	retryInterval = 3 * time.Second
-)
+const retryInterval = 3 * time.Second
 
-// Call this in main() or initialization
+func rabbitMQRequired() bool {
+	return os.Getenv("RABBITMQ_URL") != ""
+}
+
+func declareDefaultQueue(channel *amqp091.Channel) error {
+	_, err := channel.QueueDeclare(
+		rabbitQueue,
+		true,  // durable
+		false, // auto-delete
+		false, // exclusive
+		false, // no-wait
+		nil,
+	)
+	return err
+}
+
+func connectRabbitMQ() (*amqp091.Connection, *amqp091.Channel, error) {
+	conn, err := amqp091.Dial(os.Getenv("RABBITMQ_URL"))
+	if err != nil {
+		return nil, nil, err
+	}
+	channel, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+	if err := declareDefaultQueue(channel); err != nil {
+		channel.Close()
+		conn.Close()
+		return nil, nil, err
+	}
+	return conn, channel, nil
+}
+
+func setRabbitMQConnection(conn *amqp091.Connection, channel *amqp091.Channel) {
+	rabbitConn = conn
+	rabbitChannel = channel
+	rabbitEnabled = true
+}
+
+// InitRabbitMQ must run before the HTTP server starts.
+// If RABBITMQ_URL is set, it blocks until the broker accepts AMQP (e.g. after host reboot).
 func InitRabbitMQ() {
 	rabbitURL := os.Getenv("RABBITMQ_URL")
 	rabbitQueue = os.Getenv("RABBITMQ_QUEUE")
 
 	if rabbitQueue == "" {
-		rabbitQueue = "whatsapp_events" // default queue
+		rabbitQueue = "whatsapp_events"
 	}
 
 	if rabbitURL == "" {
@@ -38,79 +74,34 @@ func InitRabbitMQ() {
 		return
 	}
 
-	// Attempt to connect with retry
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Info().
-			Int("attempt", attempt).
-			Int("max_retries", maxRetries).
-			Msg("Attempting to connect to RabbitMQ")
+	log.Info().
+		Str("queue", rabbitQueue).
+		Msg("RabbitMQ required: waiting for broker before starting server")
 
-		conn, err := amqp091.Dial(rabbitURL)
+	for attempt := 1; ; attempt++ {
+		conn, channel, err := connectRabbitMQ()
 		if err != nil {
 			log.Warn().
 				Err(err).
 				Int("attempt", attempt).
-				Int("max_retries", maxRetries).
-				Msg("Failed to connect to RabbitMQ")
-
-			if attempt < maxRetries {
-				log.Info().
-					Dur("retry_in", retryInterval).
-					Msg("Retrying RabbitMQ connection")
-				time.Sleep(retryInterval)
-				continue
-			}
-
-			// Last attempt failed
-			rabbitEnabled = false
-			log.Error().
-				Err(err).
-				Msg("Could not connect to RabbitMQ after all retries. RabbitMQ disabled.")
-			return
+				Dur("retry_in", retryInterval).
+				Msg("RabbitMQ not ready yet")
+			time.Sleep(retryInterval)
+			continue
 		}
 
-		// Connection successful, attempt to open channel
-		channel, err := conn.Channel()
-		if err != nil {
-			conn.Close()
-			log.Warn().
-				Err(err).
-				Int("attempt", attempt).
-				Msg("Failed to open RabbitMQ channel")
-
-			if attempt < maxRetries {
-				log.Info().
-					Dur("retry_in", retryInterval).
-					Msg("Retrying RabbitMQ connection")
-				time.Sleep(retryInterval)
-				continue
-			}
-
-			// Last attempt failed
-			rabbitEnabled = false
-			log.Error().
-				Err(err).
-				Msg("Could not open RabbitMQ channel after all retries. RabbitMQ disabled.")
-			return
-		}
-
-		// Success!
-		rabbitConn = conn
-		rabbitChannel = channel
-		rabbitEnabled = true
+		setRabbitMQConnection(conn, channel)
 
 		log.Info().
 			Str("queue", rabbitQueue).
 			Int("attempt", attempt).
 			Msg("RabbitMQ connection established successfully")
 
-		// Setup handler for automatic reconnection on errors
 		go handleConnectionErrors()
 		return
 	}
 }
 
-// Monitor connection errors and attempt reconnection
 func handleConnectionErrors() {
 	notifyClose := rabbitConn.NotifyClose(make(chan *amqp091.Error))
 
@@ -121,52 +112,28 @@ func handleConnectionErrors() {
 
 		rabbitEnabled = false
 
-		// Attempt to reconnect
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			log.Info().
-				Int("attempt", attempt).
-				Msg("Reconnecting to RabbitMQ")
-
+		for attempt := 1; ; attempt++ {
 			time.Sleep(retryInterval)
 
-			rabbitURL := os.Getenv("RABBITMQ_URL")
-			conn, err := amqp091.Dial(rabbitURL)
+			conn, channel, err := connectRabbitMQ()
 			if err != nil {
 				log.Warn().
 					Err(err).
 					Int("attempt", attempt).
-					Msg("Reconnection failed")
+					Msg("RabbitMQ reconnection failed")
 				continue
 			}
 
-			channel, err := conn.Channel()
-			if err != nil {
-				conn.Close()
-				log.Warn().
-					Err(err).
-					Int("attempt", attempt).
-					Msg("Failed to open channel on reconnection")
-				continue
-			}
+			setRabbitMQConnection(conn, channel)
 
-			// Reconnection successful
-			rabbitConn = conn
-			rabbitChannel = channel
-			rabbitEnabled = true
+			log.Info().Int("attempt", attempt).Msg("RabbitMQ reconnected successfully")
 
-			log.Info().Msg("RabbitMQ reconnected successfully")
-
-			// Restart monitoring
 			go handleConnectionErrors()
 			return
 		}
-
-		log.Error().Msg("Failed to reconnect to RabbitMQ after all retries")
-		return
 	}
 }
 
-// Optionally, allow overriding the queue per message
 func PublishToRabbit(data []byte, queueOverride ...string) error {
 	if !rabbitEnabled {
 		return nil
@@ -175,24 +142,23 @@ func PublishToRabbit(data []byte, queueOverride ...string) error {
 	if len(queueOverride) > 0 && queueOverride[0] != "" {
 		queueName = queueOverride[0]
 	}
-	// Declare queue (idempotent)
 	_, err := rabbitChannel.QueueDeclare(
 		queueName,
-		true,  // durable
-		false, // auto-delete
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments
+		true,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("queue", queueName).Msg("Could not declare RabbitMQ queue")
 		return err
 	}
 	err = rabbitChannel.Publish(
-		"",        // exchange (default)
-		queueName, // routing key = queue
-		false,     // mandatory
-		false,     // immediate
+		"",
+		queueName,
+		false,
+		false,
 		amqp091.Publishing{
 			ContentType:  "application/json",
 			Body:         data,
@@ -209,37 +175,20 @@ func PublishToRabbit(data []byte, queueOverride ...string) error {
 
 func sendToGlobalRabbit(jsonData []byte, token string, userID string, queueName ...string) {
 	if !rabbitEnabled {
-		// Check if RabbitMQ is configured but disabled due to connection issues
-		rabbitURL := os.Getenv("RABBITMQ_URL")
-		rabbitQueueEnv := os.Getenv("RABBITMQ_QUEUE")
-
-		if rabbitURL != "" || rabbitQueueEnv != "" {
-			urlSet := "no"
-			if rabbitURL != "" {
-				urlSet = "yes"
-			}
-			queueSet := "no"
-			if rabbitQueueEnv != "" {
-				queueSet = "yes"
-			}
-			log.Error().
-				Str("rabbitmq_url_set", urlSet).
-				Str("rabbitmq_queue_set", queueSet).
-				Msg("RabbitMQ is configured but disabled due to connection failure. Event not published to queue.")
+		if rabbitMQRequired() {
+			log.Error().Msg("RabbitMQ is configured but temporarily unavailable. Event not published to queue.")
 		} else {
 			log.Debug().Msg("RabbitMQ not configured. Event not published to queue.")
 		}
 		return
 	}
 
-	// Extract instance information
 	instance_name := ""
 	userinfo, found := userinfocache.Get(token)
 	if found {
 		instance_name = userinfo.(Values).Get("Name")
 	}
 
-	// Parse the original JSON into a map
 	var originalData map[string]interface{}
 	err := json.Unmarshal(jsonData, &originalData)
 	if err != nil {
@@ -247,11 +196,9 @@ func sendToGlobalRabbit(jsonData []byte, token string, userID string, queueName 
 		return
 	}
 
-	// Add the new fields directly to the original data
 	originalData["userID"] = userID
 	originalData["instanceName"] = instance_name
 
-	// Marshal back to JSON
 	enhancedJSON, err := json.Marshal(originalData)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal enhanced data for RabbitMQ")
@@ -265,7 +212,6 @@ func sendToGlobalRabbit(jsonData []byte, token string, userID string, queueName 
 }
 
 func PublishFileErrorToQueue(payload WebhookFileErrorPayload) {
-
 	queueName := *webhookErrorQueueName
 
 	body, err := json.Marshal(payload)
