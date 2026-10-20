@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -10,10 +11,12 @@ import (
 )
 
 var (
+	rabbitMu      sync.Mutex
 	rabbitConn    *amqp091.Connection
 	rabbitChannel *amqp091.Channel
 	rabbitEnabled bool
 	rabbitQueue   string
+	knownQueues   map[string]struct{}
 )
 
 const retryInterval = 3 * time.Second
@@ -22,9 +25,9 @@ func rabbitMQRequired() bool {
 	return os.Getenv("RABBITMQ_URL") != ""
 }
 
-func declareDefaultQueue(channel *amqp091.Channel) error {
+func declareQueue(channel *amqp091.Channel, name string) error {
 	_, err := channel.QueueDeclare(
-		rabbitQueue,
+		name,
 		true,  // durable
 		false, // auto-delete
 		false, // exclusive
@@ -44,7 +47,7 @@ func connectRabbitMQ() (*amqp091.Connection, *amqp091.Channel, error) {
 		conn.Close()
 		return nil, nil, err
 	}
-	if err := declareDefaultQueue(channel); err != nil {
+	if err := declareQueue(channel, rabbitQueue); err != nil {
 		channel.Close()
 		conn.Close()
 		return nil, nil, err
@@ -56,6 +59,14 @@ func setRabbitMQConnection(conn *amqp091.Connection, channel *amqp091.Channel) {
 	rabbitConn = conn
 	rabbitChannel = channel
 	rabbitEnabled = true
+	knownQueues = map[string]struct{}{rabbitQueue: {}}
+}
+
+func markRabbitMQUnavailable() {
+	rabbitEnabled = false
+	rabbitChannel = nil
+	rabbitConn = nil
+	knownQueues = nil
 }
 
 // InitRabbitMQ must run before the HTTP server starts.
@@ -90,7 +101,9 @@ func InitRabbitMQ() {
 			continue
 		}
 
+		rabbitMu.Lock()
 		setRabbitMQConnection(conn, channel)
+		rabbitMu.Unlock()
 
 		log.Info().
 			Str("queue", rabbitQueue).
@@ -103,14 +116,23 @@ func InitRabbitMQ() {
 }
 
 func handleConnectionErrors() {
-	notifyClose := rabbitConn.NotifyClose(make(chan *amqp091.Error))
+	rabbitMu.Lock()
+	conn := rabbitConn
+	rabbitMu.Unlock()
+	if conn == nil {
+		return
+	}
+
+	notifyClose := conn.NotifyClose(make(chan *amqp091.Error))
 
 	for err := range notifyClose {
 		log.Error().
 			Err(err).
 			Msg("RabbitMQ connection closed unexpectedly. Attempting reconnection...")
 
-		rabbitEnabled = false
+		rabbitMu.Lock()
+		markRabbitMQUnavailable()
+		rabbitMu.Unlock()
 
 		for attempt := 1; ; attempt++ {
 			time.Sleep(retryInterval)
@@ -124,7 +146,9 @@ func handleConnectionErrors() {
 				continue
 			}
 
+			rabbitMu.Lock()
 			setRabbitMQConnection(conn, channel)
+			rabbitMu.Unlock()
 
 			log.Info().Int("attempt", attempt).Msg("RabbitMQ reconnected successfully")
 
@@ -135,26 +159,27 @@ func handleConnectionErrors() {
 }
 
 func PublishToRabbit(data []byte, queueOverride ...string) error {
-	if !rabbitEnabled {
-		return nil
-	}
 	queueName := rabbitQueue
 	if len(queueOverride) > 0 && queueOverride[0] != "" {
 		queueName = queueOverride[0]
 	}
-	_, err := rabbitChannel.QueueDeclare(
-		queueName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		log.Error().Err(err).Str("queue", queueName).Msg("Could not declare RabbitMQ queue")
-		return err
+
+	rabbitMu.Lock()
+	defer rabbitMu.Unlock()
+
+	if !rabbitEnabled || rabbitChannel == nil {
+		return nil
 	}
-	err = rabbitChannel.Publish(
+
+	if _, ok := knownQueues[queueName]; !ok {
+		if err := declareQueue(rabbitChannel, queueName); err != nil {
+			log.Error().Err(err).Str("queue", queueName).Msg("Could not declare RabbitMQ queue")
+			return err
+		}
+		knownQueues[queueName] = struct{}{}
+	}
+
+	err := rabbitChannel.Publish(
 		"",
 		queueName,
 		false,
@@ -173,8 +198,14 @@ func PublishToRabbit(data []byte, queueOverride ...string) error {
 	return err
 }
 
+func isRabbitEnabled() bool {
+	rabbitMu.Lock()
+	defer rabbitMu.Unlock()
+	return rabbitEnabled
+}
+
 func sendToGlobalRabbit(jsonData []byte, token string, userID string, queueName ...string) {
-	if !rabbitEnabled {
+	if !isRabbitEnabled() {
 		if rabbitMQRequired() {
 			log.Error().Msg("RabbitMQ is configured but temporarily unavailable. Event not published to queue.")
 		} else {

@@ -477,19 +477,20 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 
 			log.Info().Str("proxy", proxyURL).Msg("Configuring proxy")
 
+			// Session proxy is only for the WhatsApp connection. Webhooks must
+			// not inherit it: SOCKS providers typically allow only WhatsApp
+			// destinations and reject the user's webhook URL.
 			if parsed.Scheme == "socks5" || parsed.Scheme == "socks5h" {
 				dialer, derr := proxy.FromURL(parsed, nil)
 				if derr != nil {
 					log.Warn().Err(derr).Str("proxy", proxyURL).Msg("Failed to build SOCKS proxy dialer, skipping proxy setup")
 				} else {
-					httpClient.SetProxy(proxyURL)
 					client.SetSOCKSProxy(dialer, whatsmeow.SetProxyOptions{})
-					log.Info().Msg("SOCKS proxy configured successfully")
+					log.Info().Msg("SOCKS proxy configured for WhatsApp connection")
 				}
 			} else {
-				httpClient.SetProxy(proxyURL)
 				client.SetProxyAddress(parsed.String(), whatsmeow.SetProxyOptions{})
-				log.Info().Msg("HTTP/HTTPS proxy configured successfully")
+				log.Info().Msg("HTTP/HTTPS proxy configured for WhatsApp connection")
 			}
 		}
 	}
