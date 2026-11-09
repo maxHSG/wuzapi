@@ -20,6 +20,7 @@ var supportedEventTypes = []string{
 	"Connected",
 	"Disconnected",
 	"ConnectFailure",
+	"ProxyRemoved",
 	"KeepAliveRestored",
 	"KeepAliveTimeout",
 	"QRTimeout",

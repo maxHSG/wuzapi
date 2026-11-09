@@ -468,6 +468,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 
 	// Set proxy if defined in DB (assumes users table contains proxy_url column)
 	var proxyURL string
+	proxyApplied := false
 	err = s.db.Get(&proxyURL, "SELECT proxy_url FROM users WHERE id=$1", userID)
 	if err == nil && proxyURL != "" {
 		parsed, perr := url.Parse(proxyURL)
@@ -486,10 +487,13 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 					log.Warn().Err(derr).Str("proxy", proxyURL).Msg("Failed to build SOCKS proxy dialer, skipping proxy setup")
 				} else {
 					client.SetSOCKSProxy(dialer, whatsmeow.SetProxyOptions{})
+					proxyApplied = true
 					log.Info().Msg("SOCKS proxy configured for WhatsApp connection")
 				}
+			} else if perr := client.SetProxyAddress(parsed.String(), whatsmeow.SetProxyOptions{}); perr != nil {
+				log.Warn().Err(perr).Str("proxy", proxyURL).Msg("Failed to configure HTTP proxy, skipping proxy setup")
 			} else {
-				client.SetProxyAddress(parsed.String(), whatsmeow.SetProxyOptions{})
+				proxyApplied = true
 				log.Info().Msg("HTTP/HTTPS proxy configured for WhatsApp connection")
 			}
 		}
@@ -509,7 +513,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 				return
 			}
 		} else {
-			err = client.Connect() // Must connect to generate QR code
+			err = s.connectClient(client, userID, token, &proxyApplied) // Must connect to generate QR code
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to connect client")
 				return
@@ -653,7 +657,7 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 				time.Sleep(waitTime)
 			}
 
-			err = client.Connect()
+			err = s.connectClient(client, userID, token, &proxyApplied)
 			if err == nil {
 				log.Info().
 					Int("attempt", attempt+1).
@@ -720,6 +724,57 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 			//log.Info().Str("jid",textjid).Msg("Loop the loop")
 		}
 	}
+}
+
+// isProxyDialError reports failures that happen while reaching the proxy
+// itself, such as a SOCKS handshake that times out before WhatsApp answers.
+func isProxyDialError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "socks connect") || strings.Contains(msg, "proxyconnect") {
+		return true
+	}
+	if !strings.Contains(msg, "proxy") && !strings.Contains(msg, "socks") {
+		return false
+	}
+	return strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "network is unreachable") ||
+		strings.Contains(msg, "no route to host") ||
+		strings.Contains(msg, "i/o timeout")
+}
+
+// connectClient dials WhatsApp. When the configured proxy cannot be reached,
+// it is removed from the client and the database, and the dial is retried once
+// on a direct connection.
+func (s *server) connectClient(client *whatsmeow.Client, userID, token string, proxyApplied *bool) error {
+	err := client.Connect()
+	if err == nil || proxyApplied == nil || !*proxyApplied || !isProxyDialError(err) {
+		return err
+	}
+
+	log.Warn().Err(err).Str("userid", userID).Msg("Proxy connection failed, removing proxy and retrying without it")
+	client.SetProxy(nil)
+	*proxyApplied = false
+	if _, dbErr := s.db.Exec("UPDATE users SET proxy_url='' WHERE id=$1", userID); dbErr != nil {
+		log.Error().Err(dbErr).Str("userid", userID).Msg("Failed to clear proxy_url after proxy failure")
+	}
+	if cached, found := userinfocache.Get(token); found {
+		userinfocache.Set(token, updateUserInfo(cached, "Proxy", ""), cache.NoExpiration)
+	}
+	if mycli := clientManager.GetMyClient(userID); mycli != nil {
+		postmap := map[string]interface{}{
+			"event":  "ProxyRemoved",
+			"type":   "ProxyRemoved",
+			"error":  err.Error(),
+			"reason": "Proxy connection failed, proxy removed, retrying without it",
+		}
+		sendEventWithWebHook(mycli, postmap, "")
+	}
+	return client.Connect()
 }
 
 func fileToBase64(filepath string) (string, string, error) {
@@ -1003,24 +1058,24 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}
 		}
-    
-    if encMessage := evt.Message.GetSecretEncryptedMessage(); encMessage != nil {
-        decrypted, derr := mycli.WAClient.DecryptSecretEncryptedMessage(context.Background(), evt)
-        if derr != nil {
-            log.Warn().
-                Err(derr).
-                Str("messageID", evt.Info.ID).
-                Str("secretEncType", encMessage.GetSecretEncType().String()).
-                Msg("DecryptSecretEncryptedMessage failed")
-        } else if decrypted != nil {
-            log.Info().
-                Str("messageID", evt.Info.ID).
-                Str("secretEncType", encMessage.GetSecretEncType().String()).
-                Msg("Decrypted secretEncryptedMessage; swapping evt.Message")
-                evt.Message = decrypted
-        }
-    }
-    
+
+		if encMessage := evt.Message.GetSecretEncryptedMessage(); encMessage != nil {
+			decrypted, derr := mycli.WAClient.DecryptSecretEncryptedMessage(context.Background(), evt)
+			if derr != nil {
+				log.Warn().
+					Err(derr).
+					Str("messageID", evt.Info.ID).
+					Str("secretEncType", encMessage.GetSecretEncType().String()).
+					Msg("DecryptSecretEncryptedMessage failed")
+			} else if decrypted != nil {
+				log.Info().
+					Str("messageID", evt.Info.ID).
+					Str("secretEncType", encMessage.GetSecretEncType().String()).
+					Msg("Decrypted secretEncryptedMessage; swapping evt.Message")
+				evt.Message = decrypted
+			}
+		}
+
 		if !*skipMedia {
 
 			extendTextMessage := evt.Message.GetExtendedTextMessage()
