@@ -2559,9 +2559,10 @@ func (s *server) SetStatusMessage() http.HandlerFunc {
 			return
 		}
 
-		msg := proto.String(t.Body)
-
-		err = clientManager.GetWhatsmeowClient(txtid).SetStatusMessage(context.Background(), *msg)
+		statusText := t.Body
+		err = clientManager.GetWhatsmeowClient(txtid).SetStatusMessage(context.Background(), types.SetStatusInput{
+			Text: &statusText,
+		})
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending status message: %v", err)))
 			return
@@ -3737,13 +3738,7 @@ func (s *server) updateUserBlocklist(action events.BlocklistChangeAction) http.H
 			return
 		}
 
-		blockedJIDs := make([]string, 0)
-		if blocklist != nil {
-			blockedJIDs = make([]string, 0, len(blocklist.JIDs))
-			for _, blockedJID := range blocklist.JIDs {
-				blockedJIDs = append(blockedJIDs, blockedJID.String())
-			}
-		}
+		blockedJIDs := blocklistJIDStrings(blocklist)
 
 		details := "User blocked"
 		if action == events.BlocklistChangeActionUnblock {
@@ -3786,8 +3781,28 @@ func updateBlocklistWithResolvedJID(ctx context.Context, client *whatsmeow.Clien
 		return jid, nil, err
 	}
 
-	blocklist, err := client.UpdateBlocklist(ctx, blocklistJID, action)
+	blocklist, err := client.UpdateBlocklist(ctx, blocklistJID, action, "")
 	return blocklistJID, blocklist, err
+}
+
+func blocklistJIDStrings(blocklist *types.Blocklist) []string {
+	if blocklist == nil {
+		return []string{}
+	}
+	out := make([]string, 0, len(blocklist.Items))
+	for _, item := range blocklist.Items {
+		if !item.Active {
+			continue
+		}
+		jid := item.PN
+		if jid.IsEmpty() {
+			jid = item.LID
+		}
+		if !jid.IsEmpty() {
+			out = append(out, jid.String())
+		}
+	}
+	return out
 }
 
 func resolveBlocklistPNJID(ctx context.Context, client *whatsmeow.Client, jid types.JID) (types.JID, error) {
