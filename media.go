@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -49,6 +51,16 @@ func (mycli *MyClient) processMedia(
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to download media")
 		return
+	}
+
+	if extraKeys != nil {
+		if isSticker, _ := extraKeys["isSticker"].(bool); isSticker {
+			animated, _ := extraKeys["stickerAnimated"].(bool)
+			data, mimeType, fallbackExt = presentIncomingSticker(data, mimeType, fallbackExt, animated)
+			if strings.HasPrefix(mimeType, "video/") {
+				extraKeys["stickerAnimated"] = true
+			}
+		}
 	}
 
 	ext := fallbackExt
@@ -103,4 +115,29 @@ func (mycli *MyClient) processMedia(
 	}
 
 	log.Info().Str("path", tmpPath).Msg("Media processed")
+}
+
+// Animated stickers arrive as animated WebP. Players that only understand
+// image/webp show the first frame, so the webhook file is an mp4.
+func presentIncomingSticker(data []byte, mimeType, fallbackExt string, animated bool) ([]byte, string, string) {
+	detected := http.DetectContentType(data)
+	if strings.HasPrefix(mimeType, "video/") || strings.HasPrefix(detected, "video/") {
+		if strings.Contains(mimeType, "webm") || strings.Contains(detected, "webm") {
+			return data, "video/webm", ".webm"
+		}
+		if !strings.HasPrefix(mimeType, "video/") {
+			mimeType = "video/mp4"
+		}
+		return data, mimeType, ".mp4"
+	}
+	if !animated && !webpIsAnimated(data) {
+		return data, mimeType, fallbackExt
+	}
+
+	mp4, err := convertAnimatedStickerToMP4(data)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to convert animated sticker to mp4; keeping original webp")
+		return data, mimeType, fallbackExt
+	}
+	return mp4, "video/mp4", ".mp4"
 }

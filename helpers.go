@@ -69,7 +69,11 @@ const (
 	vp8xHeightOffset = chunkHeaderSize + 7 // Bytes 7-9: canvas height - 1 (24-bit LE)
 
 	// VP8X feature flags
-	vp8xFlagEXIF byte = 0x08
+	vp8xFlagAnimation byte = 0x02
+	vp8xFlagEXIF      byte = 0x08
+
+	// WhatsApp rejects or freezes animated stickers above 500KB.
+	animatedStickerMaxBytes = 500 * 1024
 )
 
 type WebhookFileErrorPayload struct {
@@ -751,7 +755,7 @@ func fetchOpenGraphImage(ctx context.Context, pageURL *url.URL, imageURLStr stri
 	return buf.Bytes()
 }
 
-func runFFmpegConversion(input []byte, inputExt string, ffmpegArgs func(inPath, outPath string) []string, errMsg string) ([]byte, error) {
+func runFFmpegConversion(input []byte, inputExt, outputExt string, ffmpegArgs func(inPath, outPath string) []string, errMsg string) ([]byte, error) {
 	inFile, err := os.CreateTemp("", "sticker-input-*"+inputExt)
 	if err != nil {
 		return nil, err
@@ -763,7 +767,7 @@ func runFFmpegConversion(input []byte, inputExt string, ffmpegArgs func(inPath, 
 		return nil, err
 	}
 
-	outFile, err := os.CreateTemp("", "sticker-output-*.webp")
+	outFile, err := os.CreateTemp("", "sticker-output-*"+outputExt)
 	if err != nil {
 		return nil, err
 	}
@@ -786,26 +790,86 @@ func runFFmpegConversion(input []byte, inputExt string, ffmpegArgs func(inPath, 
 	return os.ReadFile(outPath)
 }
 
-func convertVideoStickerToWebP(input []byte) ([]byte, error) {
-	return runFFmpegConversion(input, ".mp4", func(inPath, outPath string) []string {
-		return []string{
-			"-y",
-			"-t", "10",
-			"-i", inPath,
-			"-vf", "fps=15,scale=512:512",
-			"-loop", "0",
-			"-an",
-			"-vsync", "0",
-			"-fs", "1000000",
-			"-c:v", "libwebp",
-			"-qscale:v", "10",
-			outPath,
+func stickerInputExt(mimeType string) string {
+	switch {
+	case mimeType == "image/gif":
+		return ".gif"
+	case strings.Contains(mimeType, "webm"):
+		return ".webm"
+	case strings.Contains(mimeType, "quicktime"):
+		return ".mov"
+	default:
+		return ".mp4"
+	}
+}
+
+func animatedStickerFFmpegArgs(inPath, outPath, encoder, fps, quality, seconds string) []string {
+	return []string{
+		"-y",
+		"-i", inPath,
+		"-t", seconds,
+		"-vf", "fps=" + fps + ",scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1",
+		"-loop", "0",
+		"-an",
+		"-vsync", "0",
+		"-c:v", encoder,
+		"-quality", quality,
+		"-preset", "default",
+		outPath,
+	}
+}
+
+func convertVideoStickerToWebP(input []byte, inputExt string) ([]byte, error) {
+	attempts := []struct{ fps, quality, seconds string }{
+		{"15", "55", "10"},
+		{"12", "35", "8"},
+		{"10", "20", "6"},
+	}
+	// libwebp writes one frame. libwebp_anim keeps the GIF/video motion.
+	encoders := []string{"libwebp_anim", "libwebp"}
+
+	var smallest []byte
+	var lastErr error
+	for _, encoder := range encoders {
+		encoderOK := false
+		for _, attempt := range attempts {
+			out, err := runFFmpegConversion(input, inputExt, ".webp", func(inPath, outPath string) []string {
+				return animatedStickerFFmpegArgs(inPath, outPath, encoder, attempt.fps, attempt.quality, attempt.seconds)
+			}, "ffmpeg failed converting video sticker")
+			if err != nil {
+				lastErr = err
+				break
+			}
+			if !webpIsAnimated(out) {
+				lastErr = fmt.Errorf("encoder %s produced a still webp", encoder)
+				break
+			}
+			encoderOK = true
+			if smallest == nil || len(out) < len(smallest) {
+				smallest = out
+			}
+			if len(out) <= animatedStickerMaxBytes {
+				return out, nil
+			}
 		}
-	}, "ffmpeg failed converting video sticker")
+		if encoderOK {
+			break
+		}
+	}
+	if smallest != nil {
+		if len(smallest) > animatedStickerMaxBytes {
+			log.Warn().Int("bytes", len(smallest)).Msg("animated sticker exceeds WhatsApp 500KB limit")
+		}
+		return smallest, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("failed to build animated webp sticker")
 }
 
 func convertImageToWebP(input []byte) ([]byte, error) {
-	return runFFmpegConversion(input, ".img", func(inPath, outPath string) []string {
+	return runFFmpegConversion(input, ".img", ".webp", func(inPath, outPath string) []string {
 		return []string{
 			"-y",
 			"-i", inPath,
@@ -817,52 +881,93 @@ func convertImageToWebP(input []byte) ([]byte, error) {
 	}, "ffmpeg failed converting image sticker")
 }
 
-func processStickerData(stickerData string, mimeOverride string, packID, packName, packPublisher string, emojis []string) ([]byte, string, error) {
+func processStickerData(stickerData string, mimeOverride string, packID, packName, packPublisher string, emojis []string) ([]byte, string, bool, error) {
 	if !strings.HasPrefix(stickerData, "data") {
-		return nil, "", fmt.Errorf("data should start with \"data:mime/type;base64,\"")
+		return nil, "", false, fmt.Errorf("data should start with \"data:mime/type;base64,\"")
 	}
 
 	dataURL, err := dataurl.DecodeString(stickerData)
 	if err != nil {
-		return nil, "", fmt.Errorf("could not decode base64 encoded data from payload")
+		return nil, "", false, fmt.Errorf("could not decode base64 encoded data from payload")
 	}
 
-	filedata, mimeType, err := convertToWebPSticker(dataURL.Data, mimeOverride)
+	filedata, mimeType, animated, err := convertToWebPSticker(dataURL.Data, mimeOverride)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 
 	if mimeType == "image/webp" {
 		filedata = embedStickerEXIF(filedata, packID, packName, packPublisher, emojis)
+		animated = animated || webpIsAnimated(filedata)
 	}
 
-	return filedata, mimeType, nil
+	return filedata, mimeType, animated, nil
 }
 
-func convertToWebPSticker(data []byte, mimeOverride string) ([]byte, string, error) {
-	mimeType := http.DetectContentType(data)
+func convertToWebPSticker(data []byte, mimeOverride string) ([]byte, string, bool, error) {
+	detected := http.DetectContentType(data)
+	mimeType := detected
 	if mimeOverride != "" {
 		mimeType = mimeOverride
+	}
+	// Sniff wins for GIF and video so a wrong MimeType label cannot flatten the motion.
+	if strings.HasPrefix(detected, "video/") || detected == "image/gif" {
+		mimeType = detected
 	}
 
 	switch {
 	case strings.HasPrefix(mimeType, "video/"), mimeType == "image/gif":
-		converted, err := convertVideoStickerToWebP(data)
+		converted, err := convertVideoStickerToWebP(data, stickerInputExt(mimeType))
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to convert video/gif sticker to webp: %w", err)
+			return nil, "", false, fmt.Errorf("failed to convert video/gif sticker to webp: %w", err)
 		}
-		return converted, "image/webp", nil
+		return converted, "image/webp", webpIsAnimated(converted), nil
 
 	case mimeType == "image/jpeg", mimeType == "image/png", mimeType == "image/jpg":
 		converted, err := convertImageToWebP(data)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to convert image sticker to webp: %w", err)
+			return nil, "", false, fmt.Errorf("failed to convert image sticker to webp: %w", err)
 		}
-		return converted, "image/webp", nil
+		return converted, "image/webp", false, nil
 
 	default:
-		return data, mimeType, nil
+		return data, mimeType, mimeType == "image/webp" && webpIsAnimated(data), nil
 	}
+}
+
+func webpIsAnimated(data []byte) bool {
+	if !isValidWebP(data) {
+		return false
+	}
+
+	pos := riffHeaderSize
+	for pos+chunkHeaderSize <= len(data) {
+		tag := string(data[pos : pos+4])
+		size := int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
+		dataEnd := pos + chunkHeaderSize + size
+		if dataEnd > len(data) {
+			return false
+		}
+		if tag == "ANIM" || tag == "ANMF" {
+			return true
+		}
+		if tag == "VP8X" && size >= 1 && data[pos+chunkHeaderSize]&vp8xFlagAnimation != 0 {
+			return true
+		}
+		pos = dataEnd + (size & 1)
+	}
+	return false
+}
+
+func webpCanvasSize(data []byte) (uint32, uint32, bool) {
+	if !isValidWebP(data) {
+		return 0, 0, false
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return uint32(cfg.Width), uint32(cfg.Height), true
 }
 
 func embedStickerEXIF(inputWebP []byte, packID, packName, packPublisher string, emojis []string) []byte {

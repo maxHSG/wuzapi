@@ -1460,7 +1460,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			t.Sticker = imgDataURL.String()
 		}
 
-		processedData, detectedMimeType, err := processStickerData(
+		processedData, detectedMimeType, animated, err := processStickerData(
 			t.Sticker,
 			t.MimeType,
 			t.PackId,
@@ -1484,7 +1484,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			return
 		}
 
-		msg := &waE2E.Message{StickerMessage: &waE2E.StickerMessage{
+		stickerMsg := &waE2E.StickerMessage{
 			URL:           proto.String(uploaded.URL),
 			DirectPath:    proto.String(uploaded.DirectPath),
 			MediaKey:      uploaded.MediaKey,
@@ -1493,7 +1493,15 @@ func (s *server) SendSticker() http.HandlerFunc {
 			FileSHA256:    uploaded.FileSHA256,
 			FileLength:    proto.Uint64(uint64(len(processedData))),
 			PngThumbnail:  t.PngThumbnail,
-		}}
+		}
+		if animated {
+			stickerMsg.IsAnimated = proto.Bool(true)
+		}
+		if width, height, ok := webpCanvasSize(processedData); ok {
+			stickerMsg.Width = proto.Uint32(width)
+			stickerMsg.Height = proto.Uint32(height)
+		}
+		msg := &waE2E.Message{StickerMessage: stickerMsg}
 
 		if t.ContextInfo.StanzaID != nil {
 			var qm *waE2E.Message
@@ -5484,11 +5492,10 @@ func (s *server) ListUsersByToken() http.HandlerFunc {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("name is required"))
 			return
 		}
-		
+
 		// Fetch a single user
 		query = "SELECT id, name, token, webhook, jid, qrcode, connected, expiration, proxy_url, events, history FROM users WHERE token = $1"
 		args = append(args, userToken)
-	
 
 		rows, err := s.db.Queryx(query, args...)
 		if err != nil {
@@ -5511,13 +5518,13 @@ func (s *server) ListUsersByToken() http.HandlerFunc {
 
 			//"connected":  user.Connected.Bool,
 			userMap := map[string]interface{}{
-				"id":         user.Id,
-				"name":       user.Name,
-				"token":      user.Token,
-				"webhook":    user.Webhook,
-				"jid":        user.Jid,
+				"id":      user.Id,
+				"name":    user.Name,
+				"token":   user.Token,
+				"webhook": user.Webhook,
+				"jid":     user.Jid,
 			}
-		
+
 			users = append(users, userMap)
 		}
 		// Check for any error that occurred during iteration
